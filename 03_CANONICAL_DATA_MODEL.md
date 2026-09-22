@@ -1,3 +1,4 @@
+
 # Canonical Data Model
 
 > 状态：Draft
@@ -8,21 +9,31 @@
 >
 > **v0.2 修订说明**（依据架构评审与 `07_DECISIONS.md`）：
 >
-> | 编号    | 修订点                                                                | 位置        |
-> | ------- | --------------------------------------------------------------------- | ----------- |
-> | V2-3    | 新增**定性 Fact**，承接工程判断类断言                           | §16.4      |
-> | V2-4    | 数值存储由「SI 基准」改为**原始值 + 原始单位 + quantity_kind**  | §8 / §10  |
-> | V2-5    | 新增**ConclusionRule**（多项 Evaluation 聚合为单一 Conclusion） | §27.1      |
-> | V2-11   | `confidence` 降为诊断字段，人工闸门改用 `review_status`           | §8 / §14  |
-> | C2 修正 | `method` 枚举补充 `observed`；Conflict 示例修正字段错用           | §12 / §35 |
+> | 编号 | 修订点 | 位置 |
+> | ---- | ---- | ---- |
+> | V2-3 | 新增**定性 Fact**，承接工程判断类断言 | §16.4 |
+> | V2-4 | 数值存储由「SI 基准」改为**原始值 + 原始单位 + quantity_kind** | §8 / §10 |
+> | V2-5 | 新增 **ConclusionRule**（多项 Evaluation 聚合为单一 Conclusion） | §27.1 |
+> | V2-11 | `confidence` 降为诊断字段，人工闸门改用 `review_status` | §8 / §14 |
+> | C2 修正 | `method` 枚举补充 `observed`；Conflict 示例修正字段错用 | §12 / §35 |
 >
 > **v0.3 修订说明**（依据架构评审与 `07_DECISIONS.md`）：
 >
-> | 编号   | 修订点                                                                            | 位置        |
-> | ------ | --------------------------------------------------------------------------------- | ----------- |
-> | V2.1-4 | Fact 类型层：三段式 ID +`fact_type` 受控注册表，`required_facts[]` 落在类型层 | §8 / §8.1 |
-> | V2.1-5 | Criterion 与 Fact 同构：强制字段 +`review_status` 判定闸门                      | §25.1      |
-> | V2.1-9 | Fact 更正语义：`supersedes` / `superseded`，与 `conflict` 区分              | §15.5      |
+> | 编号 | 修订点 | 位置 |
+> | ---- | ---- | ---- |
+> | V2.1-4 | Fact 类型层：三段式 ID + `fact_type` 受控注册表，`required_facts[]` 落在类型层 | §8 / §8.1 |
+> | V2.1-5 | Criterion 与 Fact 同构：强制字段 + `review_status` 判定闸门 | §25.1 |
+> | V2.1-9 | Fact 更正语义：`supersedes` / `superseded`，与 `conflict` 区分 | §15.5 |
+>
+> **v0.3.1 修订说明**（依据设计澄清会话 2026-09-22，见 `07_DECISIONS.md` D-027）：
+>
+> | 编号 | 修订点 | 位置 |
+> | ---- | ---- | ---- |
+> | V3.1-1 | `scope_class` 语义澄清为「断言主体的实体类型」，新增 `defect`；`crack` 不再是独立 scope_class | §8.1 |
+> | V3.1-2 | Fact ID grammar 正式冻结：三段，任一段不含 `.`，attribute 来自注册表 | §8.1 / §9 |
+> | V3.1-3 | `fact_type` 不变式：`fact_type` ≡ `<scope_class>.<attribute>`，第一段必须等于 ID 第一段 | §8.1 |
+> | V3.1-4 | `revision: int = 1` 加入 Fact 强制字段；更正链从 ID `.vN` 后缀改为 revision 链 | §8 / §15.5 |
+> | V3.1-5 | 示例全面修正：`crack` → `defect`，两段式 ID → 三段式，`photo` / `measurement` 不作为 scope_class | §9 / §15.2 / §16 / §17 |
 >
 > 本文档重点解决：
 >
@@ -292,50 +303,88 @@ RawSource
 
 Fact 至少需要以下字段：
 
-| 字段                                     | 说明                                                                                            | 缺失后果                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------- |
-| `id`                                   | 实例级稳定标识，三段式`fact:<scope_class>.<instance_key>.<attribute_path>`（v0.3，见 §8.1）  | 无法定位                   |
-| `fact_type`                            | 类型路径，属受控注册表（如`component.concrete_strength`）（v0.3 新增）                        | 类型级需求无法匹配实例集合 |
-| `value` / `unit` / `quantity_kind` | 值 + 原始单位 + 量纲种类（v0.2：取消 SI 基准存储）                                              | 单位/量纲错误不可查        |
-| `source_refs[]`                        | 文件 + 定位（页/表/单元格/图片 ID）                                                             | 不可追溯                   |
-| `method`                               | `measured` / `observed` / `computed` / `quoted` / `inferred`                          | 无法判断可信度             |
-| `provenance`                           | `program` / `ai` / `human`                                                                | 无法定位错误来源           |
-| `confidence`                           | 0–1，仅 AI 来源需要。**v0.2：降为诊断字段，不驱动任何决策**                              | 虚假安全感                 |
-| `review_status`                        | `pending` / `confirmed` / `rejected`，人工确认闸门（v0.2 新增）                           | 未经确认即被使用           |
-| `status`                               | `filled` / `missing` / `conflict` / `rejected` / `superseded`（v0.3 新增，见 §15.5） | 会静默补全                 |
+| 字段                 | 说明                                                    | 缺失后果         |
+| -------------------- | ------------------------------------------------------- | ---------------- |
+| `id`               | 三段式稳定标识 `fact:<scope_class>.<instance_key>.<attribute>`（v0.3.1 冻结，见 §8.1） | 无法定位         |
+| `revision`         | `int`，默认 `1`。更正链版本号；`revision > 1` 必须携带 `supersedes`（v0.3.1 新增，见 §15.5） | 无法区分版本     |
+| `fact_type`        | 类型路径，**不变式**：`fact_type` ≡ `<scope_class>.<attribute>`，第一段必须等于 ID 第一段；属受控注册表 | 类型级需求无法匹配实例集合 |
+| `value` / `unit` / `quantity_kind` | 值 + 原始单位 + 量纲种类（v0.2：取消 SI 基准存储）                | 单位/量纲错误不可查   |
+| `source_refs[]`    | 文件 + 定位（页/表/单元格/图片 ID）                     | 不可追溯         |
+| `method`           | `measured` / `observed` / `computed` / `quoted` / `inferred` | 无法判断可信度   |
+| `provenance`       | `program` / `ai` / `human`                        | 无法定位错误来源 |
+| `confidence`       | 0–1，仅 AI 来源需要。**v0.2：降为诊断字段，不驱动任何决策**      | 虚假安全感       |
+| `review_status`    | `pending` / `confirmed` / `rejected`，人工确认闸门（v0.2 新增） | 未经确认即被使用 |
+| `status`           | `filled` / `missing` / `conflict` / `rejected` / `superseded`（v0.3 新增，见 §15.5） | 会静默补全       |
 
 ### 8.1 Fact 的三段式 ID（v0.3 新增）
 
-`Fact.id` 采用三段式结构，把「哪个实例」与「什么属性」显式拆开：
+`Fact.id` 采用三段式结构（v0.3.1 正式冻结），把「哪个实例」与「什么属性」显式拆开：
 
 ```text
-fact:<scope_class>.<instance_key>.<attribute_path>
+fact:<scope_class>.<instance_key>.<attribute>
 ```
+
+**Grammar 规则（v0.3.1 冻结，严格执行）：**
+
+1. 恰好三段，前缀固定 `fact:`；
+2. 三段均不得包含 `.`（attribute 也不允许——attribute 来自注册表，注册表定义为受控 snail_case 名称，不含 `.`）；
+3. `scope_class` 取值受控枚举（见下）；
+4. `attribute` 必须来自 fact_type 注册表，与 `fact_type` 的第二段精确匹配。
 
 逐段含义：
 
-| 段                 | 含义                                    | 示例                  |
-| ------------------ | --------------------------------------- | --------------------- |
-| `scope_class`    | 事实作用域类别，受控枚举                | `component`         |
-| `instance_key`   | 该作用域下具体实例的稳定键              | `K001`              |
-| `attribute_path` | 实例上的属性路径，来自 fact_type 注册表 | `concrete_strength` |
+| 段 | 含义 | 示例 |
+| ---- | ---- | ---- |
+| `scope_class` | **断言主体的实体类型**：可作为 Fact 主体、具有稳定实例身份的领域对象类型子集 | `component` |
+| `instance_key` | 该作用域下具体实例的稳定键 | `K001` |
+| `attribute` | 实例上的属性，来自 fact_type 注册表 | `concrete_strength` |
 
-`scope_class` 为受控枚举：
+> **与 `required_facts[].scope` 的明确区分**：
+> - `scope_class`：Fact 主体类型（如 `component`）；
+> - `required_facts[].scope`：实例集合选择器（如 `component_class:beam`，用于过滤出全部梁构件实例）。
+
+`scope_class` 为受控枚举（v0.3.1 新增 `defect`）：
 
 ```text
 project
 building
 component
+defect      # v0.3.1 新增：缺陷类弱实体（如裂缝、锈蚀等）
 point
 sample
 material
 ```
 
+> **v0.3.1 变更说明**：`defect` 为弱实体，隶属于 `Component`（一个 Component 可有多个 Defect）。`crack` 是 Defect 的一种实例类型，不再作为独立 scope_class；裂缝相关事实统一表达为 `fact:defect.C001.width` / `fact:defect.C001.pattern` 等。
+
 `instance_key` 是实例的稳定键；对 `project` / `building` 等单例作用域，取该工程 / 建筑的稳定标识（如 `B01`）。
 
-`attribute_path` **必须来自 fact_type 注册表（受控词表），不得自由命名**。若允许自由命名，`component.concrete_strength` 与 `component.concrete_grade_strength` 会并存，同一工程语义出现两个类型路径，类型级预检（「每个构件的强度是否齐全」）将永久无法匹配，缺口被静默放过。
+`attribute` **必须来自 fact_type 注册表（受控词表），不得自由命名**。若允许自由命名，`component.concrete_strength` 与 `component.concrete_grade_strength` 会并存，同一工程语义出现两个类型路径，类型级预检（「每个构件的强度是否齐全」）将永久无法匹配，缺口被静默放过。
 
 > **fact_type 注册表由确定性 Skill 维护**（与 `quantity_kind` 的维护方式一致），随 Schema 一并冻结；新增类型必须先改注册表，不允许在抽取时临时发明。
+
+#### fact_type 不变式（v0.3.1 正式写入）
+
+`fact_type` 的格式固定为：
+
+```text
+fact_type ≡ <scope_class>.<attribute>
+```
+
+即：`fact_type` 第一段 **必须** 等于该 Fact ID 的 `scope_class` 段。示例：
+
+```text
+合法：
+  id = fact:component.K001.concrete_strength
+  fact_type = component.concrete_strength        ← 第一段 = component ✓
+
+  id = fact:defect.C001.width
+  fact_type = defect.width                       ← 第一段 = defect ✓
+
+非法：
+  id = fact:component.K001.concrete_strength
+  fact_type = measurement.average                ← 第一段 = measurement ≠ component ✗
+```
 
 一条实例 Fact 同时携带 `id`（指向实例）与 `fact_type`（指向类型）：
 
@@ -343,6 +392,7 @@ material
 {
   "id": "fact:component.K001.concrete_strength",
   "fact_type": "component.concrete_strength",
+  "revision": 1,
   "value": 32.4,
   "unit": "MPa",
   "quantity_kind": "pressure",
@@ -383,13 +433,14 @@ material
 - 能够参与回归测试
 - 能够帮助定位错误
 
-示意（v0.3 起为三段式，格式见 §8.1）：
+示意（v0.3.1 冻结为三段式，格式见 §8.1）：
 
 ```text
 fact:building.B01.area
 fact:building.B01.floor_count
 fact:component.K001.concrete_strength
-fact:crack.C001.width
+fact:defect.C001.width
+fact:defect.C001.pattern
 ```
 
 Report IR 后续通过 Fact ID 引用数据，而不是复制一份数据。
@@ -622,12 +673,12 @@ v0.1 曾建议用 confidence 作为「是否需要人工确认」的判断阈值
 
 v0.2 规则：
 
-| 用途                                       | 是否允许       |
-| ------------------------------------------ | -------------- |
-| 诊断记录（排查 AI 抽取风险、分析错误分布） | 允许           |
-| 作为人工确认闸门                           | **禁止** |
-| 作为「是否继续流程」的判断条件             | **禁止** |
-| 参与 Accuracy 判定的任何计算               | **禁止** |
+| 用途 | 是否允许 |
+| ---- | ---- |
+| 诊断记录（排查 AI 抽取风险、分析错误分布） | 允许 |
+| 作为人工确认闸门 | **禁止** |
+| 作为「是否继续流程」的判断条件 | **禁止** |
+| 参与 Accuracy 判定的任何计算 | **禁止** |
 
 人工确认闸门改用 `review_status ∈ {pending, confirmed, rejected}`：**二元状态，由人给出，不由模型自评**。
 
@@ -661,7 +712,8 @@ superseded     # v0.3 新增：被更正后的旧版本
 
 ```json
 {
-  "id": "fact:building.year",
+  "id": "fact:building.B01.year",
+  "revision": 1,
   "value": null,
   "unit": null,
   "status": "missing"
@@ -716,28 +768,43 @@ status = rejected
 
 ---
 
-### 15.5 更正语义（v0.3 新增）
+### 15.5 更正语义（v0.3 新增，v0.3.1 修订）
 
 L2 层原则是「只增不改」。人工更正既有值时，**不修改原记录**：
 
-1. 新增一条 Fact，携带 `supersedes`，指向被修正的旧 `fact_id`；
+1. 新增一条 Fact，携带相同的 `id`（三段式，无版本后缀）+ 递增的 `revision` + `supersedes` 指向上一 revision；
 2. 旧 Fact 的 `status` 置为 `superseded`（不是删除、不是覆盖），保证审计链完整、可回放。
+
+> **v0.3.1 关键变更**：版本号从 ID 的 `.vN` 后缀（旧方案：`fact:component.K001.concrete_strength.v2`）移出到独立字段 `revision: int`。Fact ID 恢复为稳定的三段式，Report IR 的 Ref 也继续引用无 revision 的基础 ID，由 Resolver 解析到当前有效 revision。
+
+#### revision 规则
+
+| 规则 | 说明 |
+| ---- | ---- |
+| `revision` 默认 | `1`（初始版本） |
+| `revision > 1` | **必须**携带 `supersedes` |
+| `supersedes` 内容 | 基础 Fact ID（无 revision 后缀），指向同一 `id` 的上一 revision |
+| 方向约束 | 更正链始终为 NEW(revision=N, supersedes=[上一 revision 基础 id]) → OLD(revision=N-1, status=superseded) |
+| `superseded` Fact | 不得携带 `supersedes` 字段——被更正者不能反向指向更正者 |
+
+> **跨 revision 链完整性**（revision=N 必须 supersede revision=N-1，不允许跳过中间 revision）由后续 Store 层保证；Validator 层本轮只做「结构正确」校验（见 `validate.py`）。
 
 #### 与 conflict 的区别
 
-| 状态           | 含义                                       | 处理             |
-| -------------- | ------------------------------------------ | ---------------- |
-| `conflict`   | 同一事实出现两个**来源不一致**的候选 | 需人工裁决       |
-| `superseded` | **同一个来源**被更正的版本关系       | 版本链，无需裁决 |
+| 状态 | 含义 | 处理 |
+| ---- | ---- | ---- |
+| `conflict` | 同一事实出现两个**来源不一致**的候选 | 需人工裁决 |
+| `superseded` | **同一个来源**被更正的版本关系 | revision 链，无需裁决 |
 
 二者不得混用：`conflict` 是横向的来源分歧，`superseded` 是纵向的版本更迭。
 
-示例（旧 Fact 被更正）：
+示例（revision=1 的旧 Fact 被更正为 revision=2）：
 
 ```json
 {
   "id": "fact:component.K001.concrete_strength",
   "fact_type": "component.concrete_strength",
+  "revision": 1,
   "value": 32.4,
   "unit": "MPa",
   "quantity_kind": "pressure",
@@ -747,8 +814,9 @@ L2 层原则是「只增不改」。人工更正既有值时，**不修改原记
 
 ```json
 {
-  "id": "fact:component.K001.concrete_strength.v2",
+  "id": "fact:component.K001.concrete_strength",
   "fact_type": "component.concrete_strength",
+  "revision": 2,
   "value": 34.1,
   "unit": "MPa",
   "quantity_kind": "pressure",
@@ -767,6 +835,7 @@ L2 层原则是「只增不改」。人工更正既有值时，**不修改原记
 ```json
 {
   "id": "fact:component.K001.concrete_strength",
+  "revision": 1,
   "value": 32.4,
   "unit": "MPa",
   "source_refs": [
@@ -784,11 +853,12 @@ L2 层原则是「只增不改」。人工更正既有值时，**不修改原记
 
 ---
 
-### 16.2 AI 抽取事实
+### 16.2 AI 抽取事实（缺陷 present 判断）
 
 ```json
 {
-  "id": "fact:photo.034.crack.present",
+  "id": "fact:defect.C001.present",
+  "revision": 1,
   "value": true,
   "unit": null,
   "source_refs": [
@@ -810,12 +880,14 @@ L2 层原则是「只增不改」。人工更正既有值时，**不修改原记
 
 ```json
 {
-  "id": "fact:measurement.K001.average",
+  "id": "fact:point.K001.average",
+  "revision": 1,
   "value": 32.4,
   "unit": "MPa",
   "source_refs": [
     {
-      "source_id": "measurement-calculation"
+      "source_id": "inspection.xlsx",
+      "location": "Sheet1!F20:F30"
     }
   ],
   "method": "computed",
@@ -827,7 +899,7 @@ L2 层原则是「只增不改」。人工更正既有值时，**不修改原记
 
 ---
 
-### 16.4 定性事实（v0.2 新增）
+### 16.4 定性事实（v0.2 新增，v0.3.1 修订 crack→defect）
 
 #### 问题
 
@@ -847,19 +919,20 @@ v0.1 的 Fact 模型隐含假设「事实 = 数值」。但真实工程报告的
 
 #### 字段约定
 
-| 字段              | 约定                                                         |
-| ----------------- | ------------------------------------------------------------ |
-| `value`         | 受控枚举值或短文本；**鼓励使用受控词表**，避免自由发挥 |
-| `unit`          | 为空                                                         |
-| `quantity_kind` | 取`qualitative`                                            |
-| `value_domain`  | 该事实的取值域定义（枚举列表或词表引用）                     |
-| `method`        | 通常为`observed` 或 `inferred`                           |
+| 字段 | 约定 |
+| ---- | ---- |
+| `value` | 受控枚举值或短文本；**鼓励使用受控词表**，避免自由发挥 |
+| `unit` | 为空 |
+| `quantity_kind` | 取 `qualitative` |
+| `value_domain` | 该事实的取值域定义（枚举列表或词表引用） |
+| `method` | 通常为 `observed` 或 `inferred` |
 
 #### 示例
 
 ```json
 {
-  "id": "fact:crack.C001.pattern",
+  "id": "fact:defect.C001.pattern",
+  "revision": 1,
   "value": "diagonal",
   "value_domain": ["transverse", "longitudinal", "diagonal", "random"],
   "unit": null,
@@ -876,7 +949,8 @@ v0.1 的 Fact 模型隐含假设「事实 = 数值」。但真实工程报告的
 
 ```json
 {
-  "id": "fact:crack.C001.judgement",
+  "id": "fact:defect.C001.judgement",
+  "revision": 1,
   "value": "load_induced",
   "value_domain": ["load_induced", "temperature", "shrinkage", "settlement", "unknown"],
   "unit": null,
@@ -893,11 +967,11 @@ v0.1 的 Fact 模型隐含假设「事实 = 数值」。但真实工程报告的
 
 #### 与自由文本的边界
 
-| 内容                                     | 归属                                            |
-| ---------------------------------------- | ----------------------------------------------- |
+| 内容 | 归属 |
+| ---- | ---- |
 | 「斜向」「受力裂缝」「建议压力灌浆封闭」 | **定性 Fact**（受控值域，可确认，可冲突） |
-| 「经现场检查，该梁底面存在一条」         | 报告语言，属 Report IR                          |
-| 「2.3m」「0.15mm」                       | 定量 Fact                                       |
+| 「经现场检查，该梁底面存在一条」 | 报告语言，属 Report IR |
+| 「2.3m」「0.15mm」 | 定量 Fact |
 
 **受控词表由人工维护**，取值范围在 `value_domain` 中显式声明。当 AI 抽取值不在词表内时，进入 `review_status = pending` 或新增词表项，不允许静默接受任意文本。
 
@@ -917,6 +991,7 @@ Project
 Client / Structure
   ↓
 Component
+  ├─ Defect          # v0.3.1 新增：弱实体（裂缝、锈蚀等），一个 Component 可有多个
   ↓
 InspectionItem
   ↓
@@ -930,6 +1005,13 @@ Conclusion
   ↓
 Evidence
 ```
+
+`Defect.host → Component`（弱实体，依附于 Component 存在）。裂缝相关事实不再作为 `crack.*` scope_class，而是通过 Defect 实例统一承载：
+- `fact:defect.C001.width` —— 缺陷宽度（定量）
+- `fact:defect.C001.length` —— 缺陷长度（定量）
+- `fact:defect.C001.pattern` —— 缺陷形态（定性）
+- `fact:defect.C001.judgement` —— 缺陷判断（定性）
+- `fact:defect.C001.present` —— 是否存在（布尔）
 
 更加完整地表示：
 
@@ -1119,14 +1201,14 @@ Criterion 的作用是说明：
 
 Criterion 的强制字段：
 
-| 字段                                     | 说明                                       | 示例                                                     |
-| ---------------------------------------- | ------------------------------------------ | -------------------------------------------------------- |
-| `criterion_id`                         | 稳定标识（规范 + 条款）                    | `crit:GB50292-2015.clause-5.2.3`                       |
-| `value` / `unit` / `quantity_kind` | 限值本身是数值，量纲规则与 Fact 一致       | `0.30` / `"mm"` / `"length"`                       |
-| `condition`                            | 适用条件                                   | `构件类型 = 梁`                                        |
-| `source_refs[]`                        | 规范文件的文件 + 页码 / 条款定位           | `source_id = GB50292-2015.pdf`，`location = page:47` |
-| `review_status`                        | `pending` / `confirmed` / `rejected` | `confirmed`                                            |
-| `rule`                                 | 判定形式                                   | `value <= limit`                                       |
+| 字段 | 说明 | 示例 |
+| ---- | ---- | ---- |
+| `criterion_id` | 稳定标识（规范 + 条款） | `crit:GB50292-2015.clause-5.2.3` |
+| `value` / `unit` / `quantity_kind` | 限值本身是数值，量纲规则与 Fact 一致 | `0.30` / `"mm"` / `"length"` |
+| `condition` | 适用条件 | `构件类型 = 梁` |
+| `source_refs[]` | 规范文件的文件 + 页码 / 条款定位 | `source_id = GB50292-2015.pdf`，`location = page:47` |
+| `review_status` | `pending` / `confirmed` / `rejected` | `confirmed` |
+| `rule` | 判定形式 | `value <= limit` |
 
 #### 判定闸门（红线）
 
@@ -1237,12 +1319,12 @@ ConclusionRule {
 
 ### 聚合逻辑的允许形式
 
-| 形式     | 示例                                  |
-| -------- | ------------------------------------- |
-| 单项否决 | 任一主控项不合格 → 整体不合格        |
-| 全部满足 | 全部检测项合格 → 整体合格            |
+| 形式 | 示例 |
+| ---- | ---- |
+| 单项否决 | 任一主控项不合格 → 整体不合格 |
+| 全部满足 | 全部检测项合格 → 整体合格 |
 | 分级映射 | 按不合格项数量映射到 A / B / C / D 级 |
-| 查表     | 按规范给出的组合表查取等级            |
+| 查表 | 按规范给出的组合表查取等级 |
 
 **聚合逻辑必须是可执行代码或可解析的规则表达式，不允许是自然语言描述。**
 
@@ -1550,11 +1632,11 @@ resolved_by = human
 
 v0.2 增加 `resolution_policy` 字段，第一阶段取值固定为 `manual`：
 
-| 取值                | 含义                                                        | 第一阶段           |
-| ------------------- | ----------------------------------------------------------- | ------------------ |
-| `manual`          | 人工裁决                                                    | 启用               |
+| 取值 | 含义 | 第一阶段 |
+| ---- | ---- | ---- |
+| `manual` | 人工裁决 | 启用 |
 | `source_priority` | 按来源优先级规则自动裁决（如 设计文件 > 现场记录 > 委托单） | 仅预留字段，不实现 |
-| `date_latest`     | 按资料日期取最新                                            | 仅预留字段，不实现 |
+| `date_latest` | 按资料日期取最新 | 仅预留字段，不实现 |
 
 > 第一阶段不实现任何自动裁决策略，但字段位置先留好。**不允许**在实现中出现「最后写入者胜出」这类隐式策略。
 
