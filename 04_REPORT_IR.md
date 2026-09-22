@@ -153,8 +153,8 @@ Ref
 例如：
 
 ```text
-fact:project.name
-fact:building.area
+fact:project.PROJ01.name
+fact:building.B01.area
 fact:component.K001.concrete_strength
 ```
 
@@ -467,7 +467,7 @@ Paragraph
 ```json
 {
   "type": "Ref",
-  "ref": "fact:building.area"
+  "ref": "fact:building.B01.area"
 }
 ```
 
@@ -495,9 +495,9 @@ Paragraph
 Paragraph(
     segments = [
         Lit("经检测，"),
-        Ref("fact:concrete_strength"),
+        Ref("fact:component.K001.concrete_strength"),
         Lit("，"),
-        Ref("fact:component.status")
+        Ref("fact:component.K001.id")
     ]
 )
 ```
@@ -511,12 +511,12 @@ Paragraph(
 ```text
 Narrative(
     prose        = "经现场检查，该梁底面存在一条斜向裂缝，长约 2.3m，最大宽度约 0.15mm，判断为受力裂缝，建议采用压力灌浆封闭处理。",
-    fact_refs    = [ fact:crack.C001.pattern,
-                     fact:crack.C001.length,
-                     fact:crack.C001.max_width,
-                     fact:crack.C001.judgement ],
-    anchors      = [ { token: "2.3m",   fact_id: fact:crack.C001.length },
-                     { token: "0.15mm", fact_id: fact:crack.C001.max_width } ],
+    fact_refs    = [ fact:defect.C001.pattern,
+                     fact:defect.C001.length,
+                     fact:defect.C001.width,
+                     fact:defect.C001.judgement ],
+    anchors      = [ { token: "2.3m",   fact_id: fact:defect.C001.length },
+                     { token: "0.15mm", fact_id: fact:defect.C001.width } ],
     evidence_refs= [ photo-034.jpg ]
 )
 ```
@@ -536,14 +536,14 @@ JSON 形式：
   "kind": "narrative",
   "prose": "经现场检查，该梁底面存在一条斜向裂缝，长约 2.3m，最大宽度约 0.15mm，判断为受力裂缝，建议采用压力灌浆封闭处理。",
   "fact_refs": [
-    "fact:crack.C001.pattern",
-    "fact:crack.C001.length",
-    "fact:crack.C001.max_width",
-    "fact:crack.C001.judgement"
+    "fact:defect.C001.pattern",
+    "fact:defect.C001.length",
+    "fact:defect.C001.width",
+    "fact:defect.C001.judgement"
   ],
   "anchors": [
-    { "token": "2.3m", "fact_id": "fact:crack.C001.length" },
-    { "token": "0.15mm", "fact_id": "fact:crack.C001.max_width" }
+    { "token": "2.3m", "fact_id": "fact:defect.C001.length" },
+    { "token": "0.15mm", "fact_id": "fact:defect.C001.width" }
   ],
   "evidence_refs": ["photo-034.jpg"]
 }
@@ -565,7 +565,7 @@ JSON 形式：
     },
     {
       "type": "Ref",
-      "ref": "fact:building.area"
+      "ref": "fact:building.B01.area"
     },
     {
       "type": "Lit",
@@ -598,7 +598,7 @@ JSON 形式：
 来自：
 
 ```text
-Ref("fact:building.area")
+Ref("fact:building.B01.area")
 ```
 
 ---
@@ -718,10 +718,10 @@ Fact
 示意：
 
 ```text
-fact:project.name
-fact:building.area
+fact:project.PROJ01.name
+fact:building.B01.area
 fact:component.K001.concrete_strength
-fact:crack.C001.width
+fact:defect.C001.width
 evaluation:component.K001.status
 criterion:GBxxxx.clause-5.2
 ```
@@ -755,7 +755,7 @@ Ref 只负责「引用哪个事实」，不负责「显示成什么样」。
 ```json
 {
   "type": "Ref",
-  "ref": "fact:building.area"
+  "ref": "fact:building.B01.area"
 }
 ```
 
@@ -1364,7 +1364,7 @@ Fact 是否 conflict？
 
 ```text
 Ref:
-fact:building.area
+fact:building.B01.area
 ```
 
 如果：
@@ -1763,7 +1763,7 @@ DOCX
             },
             {
               "type": "Ref",
-              "ref": "fact:project.name"
+              "ref": "fact:project.PROJ01.name"
             },
             {
               "type": "Lit",
