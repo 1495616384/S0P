@@ -46,6 +46,7 @@
 | D-024 | 2026-09-22 | gold 经济门禁：gold < 5 时 P0 不阻断构建并标注样本不足 | 有效（阈值待任务 0 校准） |
 | D-025 | 2026-09-22 | Ref 格式化单一真相源：改为 TemplateSpec.fact_display_spec[fact_type] | 推翻 V2 的 Ref.format |
 | D-026 | 2026-09-22 | IR 稳定 id 规则 + 结论段 covers[] | 有效 |
+| D-027 | 2026-09-22 | scope_class 澄清为「断言主体」+ 新增 defect + Fact ID 三段式冻结 + revision 从 ID 移出 | 取代 D-020 的部分实现 |
 
 ---
 
@@ -380,6 +381,21 @@
 | **影响** | `04_REPORT_IR.md`（id 规则 / 结论段 covers）；`02_ARCHITECTURE.md` §13.1 |
 | **是否仍然成立** | 是 |
 | **发起人** | 二次评审 + 架构自查 |
+
+---
+
+## D-027
+
+| 维度 | 内容 |
+| ---- | ---- |
+| **时间** | 2026-09-22 |
+| **意图** | 1) `scope_class` 正式定义为「断言主体的实体类型」，与 `required_facts[].scope`（实例集合选择器）明确区分；2) 新增第 7 个 scope_class `defect`（弱实体，`crack` 不再是独立 scope_class）；3) Fact ID grammar 正式冻结：恰好三段、任一段不含 `.`、`fact_type` 第一段必须等于 ID 的 scope_class 段；4) 更正链从 ID `.vN` 后缀移出到独立字段 `revision: int`（默认 1），`revision > 1` 必须携带 `supersedes` |
+| **背景** | Step 7-B 首批代码实现暴露三个内在冲突：a) 旧设计让 `attribute_path` 可含 `.`（`fact:component.K001.crack.width`），这违反 D-020「fact_type 受控注册表」原则——一个注册表项应是一个单一属性名，不能是嵌套路径；b) 旧实现出现 `measurement.average`（前缀 `measurement` 不在 scope_class 枚举），暴露 fact_type 与 scope_class 的无关联；c) `.v2` ID 后缀方案破坏 ID 稳定性（Report IR Ref 不应携带版本号）。经设计澄清会话确认：版本号应从 ID 移出，成为独立 revision 字段；scope_class 语义必须先定义清楚再扩展 |
+| **影响** | `03_CANONICAL_DATA_MODEL.md`（§8 / §8.1 / §9 / §15.2 / §15.5 / §16 / §17，v0.3 → v0.3.1）；`04_REPORT_IR.md`（所有 Fact Ref 三段式 + crack→defect）；Step 7-B 代码实现（registry / id / types / validate / tests 全量修正） |
+| **是否仍然成立** | 是 |
+| **发起人** | 设计澄清会话 2026-09-22（定点冲突修复） |
+
+**取代关系**：D-020 中关于 attribute_path 可含 `.` 的隐含假设被推翻；D-020 的 fact_type 注册表原则（第一段=scope_class）被本次显式写入为不变式。
 
 ---
 
