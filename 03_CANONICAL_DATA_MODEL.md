@@ -2,9 +2,27 @@
 
 > 状态：Draft
 >
-> 版本：v0.1
+> 版本：v0.3
 >
 > 本文档定义系统内部对工程数据、事实、领域对象及其来源关系的统一表示。
+>
+> **v0.2 修订说明**（依据架构评审与 `07_DECISIONS.md`）：
+>
+> | 编号    | 修订点                                                                | 位置        |
+> | ------- | --------------------------------------------------------------------- | ----------- |
+> | V2-3    | 新增**定性 Fact**，承接工程判断类断言                           | §16.4      |
+> | V2-4    | 数值存储由「SI 基准」改为**原始值 + 原始单位 + quantity_kind**  | §8 / §10  |
+> | V2-5    | 新增**ConclusionRule**（多项 Evaluation 聚合为单一 Conclusion） | §27.1      |
+> | V2-11   | `confidence` 降为诊断字段，人工闸门改用 `review_status`           | §8 / §14  |
+> | C2 修正 | `method` 枚举补充 `observed`；Conflict 示例修正字段错用           | §12 / §35 |
+>
+> **v0.3 修订说明**（依据架构评审与 `07_DECISIONS.md`）：
+>
+> | 编号   | 修订点                                                                            | 位置        |
+> | ------ | --------------------------------------------------------------------------------- | ----------- |
+> | V2.1-4 | Fact 类型层：三段式 ID +`fact_type` 受控注册表，`required_facts[]` 落在类型层 | §8 / §8.1 |
+> | V2.1-5 | Criterion 与 Fact 同构：强制字段 +`review_status` 判定闸门                      | §25.1      |
+> | V2.1-9 | Fact 更正语义：`supersedes` / `superseded`，与 `conflict` 区分              | §15.5      |
 >
 > 本文档重点解决：
 >
@@ -68,12 +86,12 @@ L3 Domain Objects
 L4 Report IR
 ```
 
-| 层 | 名称 | 内容 | 可变性 |
-|---|---|---|---|
-| L1 | RawSource | 文件、页、段落、单元格、图片的原始内容与坐标 | 只读，永不修改 |
-| L2 | Fact Layer | 最小断言单元，带来源与置信度 | 只增不改，冲突独立表达 |
-| L3 | Domain Objects | 工程语义实体（项目/构件/检测项/测点等） | 由 Facts 组织而来 |
-| L4 | Report IR | 面向报告结构的表示 | 每次生成重建 |
+| 层 | 名称           | 内容                                         | 可变性                 |
+| -- | -------------- | -------------------------------------------- | ---------------------- |
+| L1 | RawSource      | 文件、页、段落、单元格、图片的原始内容与坐标 | 只读，永不修改         |
+| L2 | Fact Layer     | 最小断言单元，带来源与置信度                 | 只增不改，冲突独立表达 |
+| L3 | Domain Objects | 工程语义实体（项目/构件/检测项/测点等）      | 由 Facts 组织而来      |
+| L4 | Report IR      | 面向报告结构的表示                           | 每次生成重建           |
 
 ---
 
@@ -235,7 +253,7 @@ Fact 尽量表达一个可以独立验证的断言。
 例如：
 
 ```text
-fact:building.area = 1250.30 m²
+fact:building.B01.area = 1250.30 m²
 ```
 
 而不是：
@@ -274,15 +292,82 @@ RawSource
 
 Fact 至少需要以下字段：
 
-| 字段 | 说明 | 缺失后果 |
-|---|---|---|
-| `id` | 稳定标识，IR 通过它引用 | 无法定位 |
-| `value` / `unit` | 值 + 单位，数值一律存 SI 基准 + 原始单位 | 单位错误不可查 |
-| `source_refs[]` | 文件 + 定位（页/表/单元格/图片 ID） | 不可追溯 |
-| `method` | `measured` / `computed` / `quoted` / `inferred` | 无法判断可信度 |
-| `provenance` | `program` / `ai` / `human` | 无法定位错误来源 |
-| `confidence` | 0–1，仅 AI 来源需要 | 无法设人工闸门 |
-| `status` | `filled` / `missing` / `conflict` / `rejected` | 会静默补全 |
+| 字段                                     | 说明                                                                                            | 缺失后果                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------- |
+| `id`                                   | 实例级稳定标识，三段式`fact:<scope_class>.<instance_key>.<attribute_path>`（v0.3，见 §8.1）  | 无法定位                   |
+| `fact_type`                            | 类型路径，属受控注册表（如`component.concrete_strength`）（v0.3 新增）                        | 类型级需求无法匹配实例集合 |
+| `value` / `unit` / `quantity_kind` | 值 + 原始单位 + 量纲种类（v0.2：取消 SI 基准存储）                                              | 单位/量纲错误不可查        |
+| `source_refs[]`                        | 文件 + 定位（页/表/单元格/图片 ID）                                                             | 不可追溯                   |
+| `method`                               | `measured` / `observed` / `computed` / `quoted` / `inferred`                          | 无法判断可信度             |
+| `provenance`                           | `program` / `ai` / `human`                                                                | 无法定位错误来源           |
+| `confidence`                           | 0–1，仅 AI 来源需要。**v0.2：降为诊断字段，不驱动任何决策**                              | 虚假安全感                 |
+| `review_status`                        | `pending` / `confirmed` / `rejected`，人工确认闸门（v0.2 新增）                           | 未经确认即被使用           |
+| `status`                               | `filled` / `missing` / `conflict` / `rejected` / `superseded`（v0.3 新增，见 §15.5） | 会静默补全                 |
+
+### 8.1 Fact 的三段式 ID（v0.3 新增）
+
+`Fact.id` 采用三段式结构，把「哪个实例」与「什么属性」显式拆开：
+
+```text
+fact:<scope_class>.<instance_key>.<attribute_path>
+```
+
+逐段含义：
+
+| 段                 | 含义                                    | 示例                  |
+| ------------------ | --------------------------------------- | --------------------- |
+| `scope_class`    | 事实作用域类别，受控枚举                | `component`         |
+| `instance_key`   | 该作用域下具体实例的稳定键              | `K001`              |
+| `attribute_path` | 实例上的属性路径，来自 fact_type 注册表 | `concrete_strength` |
+
+`scope_class` 为受控枚举：
+
+```text
+project
+building
+component
+point
+sample
+material
+```
+
+`instance_key` 是实例的稳定键；对 `project` / `building` 等单例作用域，取该工程 / 建筑的稳定标识（如 `B01`）。
+
+`attribute_path` **必须来自 fact_type 注册表（受控词表），不得自由命名**。若允许自由命名，`component.concrete_strength` 与 `component.concrete_grade_strength` 会并存，同一工程语义出现两个类型路径，类型级预检（「每个构件的强度是否齐全」）将永久无法匹配，缺口被静默放过。
+
+> **fact_type 注册表由确定性 Skill 维护**（与 `quantity_kind` 的维护方式一致），随 Schema 一并冻结；新增类型必须先改注册表，不允许在抽取时临时发明。
+
+一条实例 Fact 同时携带 `id`（指向实例）与 `fact_type`（指向类型）：
+
+```json
+{
+  "id": "fact:component.K001.concrete_strength",
+  "fact_type": "component.concrete_strength",
+  "value": 32.4,
+  "unit": "MPa",
+  "quantity_kind": "pressure",
+  "status": "filled"
+}
+```
+
+#### required_facts[] 落在类型层
+
+`TemplateSpec.required_facts[]`、输入完整性预检与评测的结论覆盖度检查都按**类型层**表达（「这份报告需要每一个构件的强度」），其条目结构为：
+
+```json
+{
+  "fact_type": "component.concrete_strength",
+  "scope": "component_class:beam",
+  "cardinality": "all",
+  "on_missing": "block"
+}
+```
+
+- `cardinality` 取 `all` / `at_least:N` / `optional`；
+- `scope` 把类型需求解析到实例集合（如 `component_class:beam` 解析为全部梁构件）；
+- 完整性预检即检查由 `scope` 解析出的实例集合是否满足 `cardinality`。
+
+这里只说明 `required_facts[]` 的类型层用途；具体 `TemplateSpec` 定义不在本文展开。
 
 ---
 
@@ -298,11 +383,11 @@ Fact 至少需要以下字段：
 - 能够参与回归测试
 - 能够帮助定位错误
 
-示意：
+示意（v0.3 起为三段式，格式见 §8.1）：
 
 ```text
-fact:building.area
-fact:building.floor_count
+fact:building.B01.area
+fact:building.B01.floor_count
 fact:component.K001.concrete_strength
 fact:crack.C001.width
 ```
@@ -321,25 +406,36 @@ Report IR 后续通过 Fact ID 引用数据，而不是复制一份数据。
 
 设计原则：
 
-> 数值一律存 SI 基准 + 原始单位。
+> **数值一律存「原始值 + 原始单位 + 量纲种类」，不存 SI 基准值。**
 
-这样能够避免不同输入资料使用不同单位导致系统内部数据不一致。
+v0.1 曾规定「一律存 SI 基准 + 原始单位」，v0.2 取消。原因：
 
-例如：
+- 工程报告永远按原始单位呈现（kN、mm、MPa），SI 存储必须在显示时换算回来，换算链引入无意义的舍入误差风险；
+- `32400000` 这类浮点值在 diff 与回归比对中制造大量噪音；
+- 但**仅存原始单位会丢失量纲一致性检查能力**（mm 被当成 m 相加无法被发现），因此必须同时存 `quantity_kind`。
+
+因此：
 
 ```text
 原始输入：
 32.4 MPa
 
-内部：
-value = 32400000
-unit = Pa
+存储：
+value = 32.4
+unit = "MPa"
+quantity_kind = "pressure"
 
-原始单位：
-MPa
+显示：
+32.4 MPa（原始单位 + 原始精度）
 ```
 
-具体单位转换规则后续由确定性 Skill 定义。
+强制规则：
+
+1. **单位换算只发生在计算步骤内**，不进入存储层；
+2. **显示一律使用原始单位与原始精度**，杜绝显示层二次换算；
+3. `quantity_kind` 用于量纲一致性校验，取值范围由确定性 Skill 维护（如 `length` / `force` / `pressure` / `ratio` / `count` / `dimensionless`）。
+
+具体单位转换规则由确定性 Skill 定义。
 
 ---
 
@@ -376,11 +472,24 @@ MPa
 允许的基础类型：
 
 ```text
-measured
-computed
-quoted
-inferred
+measured     # 仪器测量得到
+observed     # 现场观察、图片识别得到（v0.2 补充）
+computed     # 由程序基于已有数据计算得到
+quoted       # 直接从资料中引用
+inferred     # 基于其他信息推导得到
 ```
+
+### observed（v0.2 补充）
+
+来自现场观察或图片识别，而非仪器测量。
+
+例如：
+
+```text
+AI 从照片识别出构件表面存在裂缝
+```
+
+v0.1 的枚举漏掉了这一类，导致示例中出现 `method: "observed"` 而枚举中并无该项（Schema 从未跑过校验器）。v0.2 补齐枚举。
 
 ### measured
 
@@ -431,8 +540,7 @@ inferred
 
 - 来源
 - 推导依据
-- confidence
-- 人工确认
+- review_status（人工确认状态，v0.2）
 
 不能把 inferred 当成原始观测事实。
 
@@ -506,12 +614,22 @@ AI 从图片识别出疑似裂缝
 
 主要用于 AI 来源的 Fact。
 
-它的作用包括：
+### v0.2：降为诊断字段
 
-- 判断是否需要人工确认
-- 过滤低置信度结果
-- 支持后续验证
-- 定位 AI 抽取风险
+v0.1 曾建议用 confidence 作为「是否需要人工确认」的判断阈值。v0.2 取消该用法：
+
+> **LLM 自报的 confidence 与其真实正确率相关性极差，用它做闸门阈值会制造虚假安全感。**
+
+v0.2 规则：
+
+| 用途                                       | 是否允许       |
+| ------------------------------------------ | -------------- |
+| 诊断记录（排查 AI 抽取风险、分析错误分布） | 允许           |
+| 作为人工确认闸门                           | **禁止** |
+| 作为「是否继续流程」的判断条件             | **禁止** |
+| 参与 Accuracy 判定的任何计算               | **禁止** |
+
+人工确认闸门改用 `review_status ∈ {pending, confirmed, rejected}`：**二元状态，由人给出，不由模型自评**。
 
 ---
 
@@ -524,6 +642,7 @@ filled
 missing
 conflict
 rejected
+superseded     # v0.3 新增：被更正后的旧版本
 ```
 
 ---
@@ -597,6 +716,50 @@ status = rejected
 
 ---
 
+### 15.5 更正语义（v0.3 新增）
+
+L2 层原则是「只增不改」。人工更正既有值时，**不修改原记录**：
+
+1. 新增一条 Fact，携带 `supersedes`，指向被修正的旧 `fact_id`；
+2. 旧 Fact 的 `status` 置为 `superseded`（不是删除、不是覆盖），保证审计链完整、可回放。
+
+#### 与 conflict 的区别
+
+| 状态           | 含义                                       | 处理             |
+| -------------- | ------------------------------------------ | ---------------- |
+| `conflict`   | 同一事实出现两个**来源不一致**的候选 | 需人工裁决       |
+| `superseded` | **同一个来源**被更正的版本关系       | 版本链，无需裁决 |
+
+二者不得混用：`conflict` 是横向的来源分歧，`superseded` 是纵向的版本更迭。
+
+示例（旧 Fact 被更正）：
+
+```json
+{
+  "id": "fact:component.K001.concrete_strength",
+  "fact_type": "component.concrete_strength",
+  "value": 32.4,
+  "unit": "MPa",
+  "quantity_kind": "pressure",
+  "status": "superseded"
+}
+```
+
+```json
+{
+  "id": "fact:component.K001.concrete_strength.v2",
+  "fact_type": "component.concrete_strength",
+  "value": 34.1,
+  "unit": "MPa",
+  "quantity_kind": "pressure",
+  "supersedes": ["fact:component.K001.concrete_strength"],
+  "status": "filled",
+  "review_status": "confirmed"
+}
+```
+
+---
+
 ## 16. Fact 示例
 
 ### 16.1 测量事实
@@ -661,6 +824,82 @@ status = rejected
   "status": "filled"
 }
 ```
+
+---
+
+### 16.4 定性事实（v0.2 新增）
+
+#### 问题
+
+v0.1 的 Fact 模型隐含假设「事实 = 数值」。但真实工程报告的核心内容包含大量**定性事实与工程判断**：
+
+> 经现场检查，该梁底面存在一条**斜向**裂缝，长约 2.3m，最大宽度约 0.15mm，**走向与构件轴线基本垂直**，**判断为受力裂缝**，**建议对裂缝进行压力灌浆封闭处理**。
+
+其中 `2.3m`、`0.15mm` 是可引用数值，但「斜向」「走向与构件轴线基本垂直」「受力裂缝」「建议灌浆封闭」**既不是静态文本，也无 Fact 可指**。
+
+若这类内容只能落在自由文本中，则它们**无法被人工确认、无法进入 Conflict、无法被验证**——工程判断恰恰是鉴定报告中最需要复核的部分。
+
+#### 定义
+
+> **定性事实（Qualitative Fact）**：值为受控枚举、受控词表项或短文本的 Fact，用于表示工程观察与判断结论。
+
+它与定量 Fact 具有**完全相同的** `id` / `source_refs` / `method` / `provenance` / `status` / `review_status`。
+
+#### 字段约定
+
+| 字段              | 约定                                                         |
+| ----------------- | ------------------------------------------------------------ |
+| `value`         | 受控枚举值或短文本；**鼓励使用受控词表**，避免自由发挥 |
+| `unit`          | 为空                                                         |
+| `quantity_kind` | 取`qualitative`                                            |
+| `value_domain`  | 该事实的取值域定义（枚举列表或词表引用）                     |
+| `method`        | 通常为`observed` 或 `inferred`                           |
+
+#### 示例
+
+```json
+{
+  "id": "fact:crack.C001.pattern",
+  "value": "diagonal",
+  "value_domain": ["transverse", "longitudinal", "diagonal", "random"],
+  "unit": null,
+  "quantity_kind": "qualitative",
+  "source_refs": [
+    { "source_id": "photo-034.jpg", "location": "full-image" }
+  ],
+  "method": "observed",
+  "provenance": "ai",
+  "status": "filled",
+  "review_status": "pending"
+}
+```
+
+```json
+{
+  "id": "fact:crack.C001.judgement",
+  "value": "load_induced",
+  "value_domain": ["load_induced", "temperature", "shrinkage", "settlement", "unknown"],
+  "unit": null,
+  "quantity_kind": "qualitative",
+  "source_refs": [
+    { "source_id": "onsite-record.docx", "location": "page:4" }
+  ],
+  "method": "inferred",
+  "provenance": "human",
+  "status": "filled",
+  "review_status": "confirmed"
+}
+```
+
+#### 与自由文本的边界
+
+| 内容                                     | 归属                                            |
+| ---------------------------------------- | ----------------------------------------------- |
+| 「斜向」「受力裂缝」「建议压力灌浆封闭」 | **定性 Fact**（受控值域，可确认，可冲突） |
+| 「经现场检查，该梁底面存在一条」         | 报告语言，属 Report IR                          |
+| 「2.3m」「0.15mm」                       | 定量 Fact                                       |
+
+**受控词表由人工维护**，取值范围在 `value_domain` 中显式声明。当 AI 抽取值不在词表内时，进入 `review_status = pending` 或新增词表项，不允许静默接受任意文本。
 
 ---
 
@@ -874,6 +1113,44 @@ Criterion 的作用是说明：
 
 > “按照什么规则进行判断”。
 
+### 25.1 Criterion 的强制字段与确认闸门（v0.3 新增）
+
+`rules/` 按 Criterion 执行**确定性判定**，但**判定依据（规范限值）是 AI 从规范 PDF 中抽取的**。限值抽取错一位即可让结论方向翻转，而 IR、锚定、合计检查全都发现不了。因此 Criterion 必须与 Fact 同构：有强制字段、有溯源、有确认状态。
+
+Criterion 的强制字段：
+
+| 字段                                     | 说明                                       | 示例                                                     |
+| ---------------------------------------- | ------------------------------------------ | -------------------------------------------------------- |
+| `criterion_id`                         | 稳定标识（规范 + 条款）                    | `crit:GB50292-2015.clause-5.2.3`                       |
+| `value` / `unit` / `quantity_kind` | 限值本身是数值，量纲规则与 Fact 一致       | `0.30` / `"mm"` / `"length"`                       |
+| `condition`                            | 适用条件                                   | `构件类型 = 梁`                                        |
+| `source_refs[]`                        | 规范文件的文件 + 页码 / 条款定位           | `source_id = GB50292-2015.pdf`，`location = page:47` |
+| `review_status`                        | `pending` / `confirmed` / `rejected` | `confirmed`                                            |
+| `rule`                                 | 判定形式                                   | `value <= limit`                                       |
+
+#### 判定闸门（红线）
+
+> **`review_status != confirmed` 的 Criterion 不得参与任何判定；该检测项的 Evaluation 必须为 `not_evaluable`，禁止输出方向性判定（合格 / 不合格 / 等级）。**
+
+理由：把「AI 抽的限值」从隐式依赖变成显式闸门，避免判定依据这一最高风险环节无人把关。
+
+示例：
+
+```json
+{
+  "criterion_id": "crit:GB50292-2015.clause-5.2.3",
+  "value": 0.30,
+  "unit": "mm",
+  "quantity_kind": "length",
+  "condition": "构件类型 = 梁",
+  "source_refs": [
+    { "source_id": "GB50292-2015.pdf", "location": "page:47" }
+  ],
+  "review_status": "confirmed",
+  "rule": "value <= limit"
+}
+```
+
 ---
 
 ## 26. Evaluation
@@ -930,6 +1207,72 @@ Evaluation:
 ```
 
 属于报告语言，应由 Report IR 表示。
+
+---
+
+## 27.1 结论聚合规则 ConclusionRule（v0.2 新增）
+
+### 问题
+
+v0.1 的 `Criterion → Evaluation` 只描述**单项判定**：某一项检测是否满足某条限值。
+
+但真实报告的结论是**多项判定的聚合**。例如「该建筑结构安全性等级为 B 级」背后是多条 Evaluation 按一定逻辑合成。v0.1 没有定义这个合成层，后果是：
+
+> 结论章节无法程序化生成，只能请 LLM 综合 —— 直接击穿「程序负责判定」的红线。
+
+### 定义
+
+> **ConclusionRule**：显式定义一组 Evaluation 如何聚合为单一 Conclusion 的规则。
+
+```text
+ConclusionRule {
+    id,
+    applies_to,              # 适用的报告类型 / 结构范围
+    inputs: [evaluation_selector],   # 参与聚合的判定项
+    logic,                   # 聚合逻辑（显式、可执行）
+    output: conclusion_domain,       # 结论取值域
+    source_ref               # 规则出处（规范条文 / 公司规定）
+}
+```
+
+### 聚合逻辑的允许形式
+
+| 形式     | 示例                                  |
+| -------- | ------------------------------------- |
+| 单项否决 | 任一主控项不合格 → 整体不合格        |
+| 全部满足 | 全部检测项合格 → 整体合格            |
+| 分级映射 | 按不合格项数量映射到 A / B / C / D 级 |
+| 查表     | 按规范给出的组合表查取等级            |
+
+**聚合逻辑必须是可执行代码或可解析的规则表达式，不允许是自然语言描述。**
+
+### 示例
+
+```json
+{
+  "id": "rule:overall.safety_grade",
+  "applies_to": "report_type.structure_safety_appraisal",
+  "inputs": [
+    { "selector": "evaluation:bearing_capacity.*", "role": "controlling" },
+    { "selector": "evaluation:crack.*", "role": "secondary" }
+  ],
+  "logic": "any_controlling_unqualified => unqualified; else grade_by_table(secondary_unqualified_count)",
+  "output": ["A", "B", "C", "D", "unqualified"],
+  "source_ref": "公司鉴定作业指导书 第X条"
+}
+```
+
+### 约束
+
+1. Conclusion 必须由 ConclusionRule 产生，**禁止由 LLM 自由综合**；
+2. 每条 Conclusion 必须记录所用的 `rule_id` 与全部参与聚合的 Evaluation id，保证可追溯；
+3. 规则缺失时，结论只能是 `missing`，不允许「先让 AI 写一段」。
+
+### 与 Report IR 的关系
+
+ConclusionRule 产出的是**结构化结论事实**（如 `conclusion.overall = "B"`）。
+
+结论的**文字表述**仍属 Report IR，由受控模板句 + Ref 生成，见 `04_REPORT_IR.md`。
 
 ---
 
@@ -1094,7 +1437,7 @@ RawSource
 
 ```text
 Fact:
-    building.area = 1250.30 m²
+    building.B01.area = 1250.30 m²
 
 source_refs:
     ├── design.pdf page 8
@@ -1150,19 +1493,26 @@ Conflict {
 
 ```json
 {
-  "fact_id": "fact:building.area",
+  "fact_id": "fact:building.B01.area",
   "candidates": [
     {
       "value": 1250.30,
+      "unit": "m²",
+      "quantity_kind": "area",
       "source_ref": "design.pdf#page=8",
-      "provenance": "quoted"
+      "method": "quoted",
+      "provenance": "program"
     },
     {
       "value": 1280.00,
+      "unit": "m²",
+      "quantity_kind": "area",
       "source_ref": "inspection.xlsx#Sheet1!F23",
-      "provenance": "quoted"
+      "method": "quoted",
+      "provenance": "program"
     }
   ],
+  "resolution_policy": "manual",
   "resolved_by": null,
   "resolution": null
 }
@@ -1193,6 +1543,20 @@ resolved_by = human
 ```
 
 这种隐式策略。
+
+### resolution_policy 钩子（v0.2 新增）
+
+真实项目中，不同资料日期、口径不一致会产生数十处冲突，全部人工裁决在第一阶段可行，但必须预留自动化的钩子，否则第二阶段必然重构。
+
+v0.2 增加 `resolution_policy` 字段，第一阶段取值固定为 `manual`：
+
+| 取值                | 含义                                                        | 第一阶段           |
+| ------------------- | ----------------------------------------------------------- | ------------------ |
+| `manual`          | 人工裁决                                                    | 启用               |
+| `source_priority` | 按来源优先级规则自动裁决（如 设计文件 > 现场记录 > 委托单） | 仅预留字段，不实现 |
+| `date_latest`     | 按资料日期取最新                                            | 仅预留字段，不实现 |
+
+> 第一阶段不实现任何自动裁决策略，但字段位置先留好。**不允许**在实现中出现「最后写入者胜出」这类隐式策略。
 
 ---
 
@@ -1277,7 +1641,7 @@ PDF
 +
 有 provenance
 +
-有 confidence
+有 review_status（人工确认状态）
 +
 可人工确认
 ```
