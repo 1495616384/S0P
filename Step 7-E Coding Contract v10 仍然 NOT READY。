@@ -1,0 +1,289 @@
+This is still a Contract v11 drafting task with no code writing. The user is making 7 specific closure fixes, plus document hygiene. I must call AdvisorTool first per the mandatory policy (user said "v10 STILL NOT READY" — that's frustration/correction trigger). Let me call AdvisorTool then produce v11.
+
+### 意图理解 & 边界冻结确认
+
+**本轮核心意图**（与用户声明逐项对齐）：
+> 对 Step 7-E Accuracy Validator 的 Coding Contract v10 做 **8 项精确闭环**，仅修契约文本，不写代码、不改 Step 7-D、不加 P0 Rule、不扩 Validator 职责。
+
+**8 项待闭环清单**（用户标一~六，加七 renderable_fact_types、八版本卫生）：
+1. `applicable_rule_count` / `evaluable_rule_count` 计数正式冻结（与 CaseStatus 聚合解耦）
+2. Unit Registry **内容**（非结构）正式冻结：完整 UNIT_TO_QUANTITY dict
+3. D-025 两层明确：`TemplateSpec.fact_display_spec`（完整渲染） vs Step 7-E Snapshot（只读 decimals）
+4. `ActualIssue` public constructor 正式禁止外部传入 `identity` / `issue_id`（dataclass 语义对齐）
+5. FactDisplaySpec 同一 `fact_type` 重复 → Stage A `precondition_error`
+6. tokenizer candidate 反例与冻结的 regex 严格对齐（ST001 numeric = NONE；S-3 numeric = `3`）
+7. `renderable_fact_types` schema 正式冻结（frozenset[str]，≠ required_facts）
+8. 文档版本卫生：文件名/标题/正文统一为 v10（无元话语）
+
+**前置不变量全部保持**：7 P0 不增删、Step 7-D 只读、known_issues 只读、ExpectedIssue 不去重、Validator 不执行 Criterion grammar、不做 build gate、不 import Step 7-F+、不引入 LLM、`frozen_round` 用 Decimal+ROUND_HALF_UP、`issue_id` 用 SHA-256 禁止 Python hash()。
+
+---
+
+首先读取现有的 Step 7-E 契约文件和所有依赖，做还原法一致性检验。
+好，先理清楚用户这一轮的意图。用户说的是 Step 7-E Coding Contract v10 仍然 NOT READY，要求**不要写代码、不要改 Step 7-D、不要新增 P0 Rule、不要扩大 Validator 职责**，只做最后的契约闭环。用户列了七个（加上隐含的版本卫生是第八个）需要冻结的点。
+
+首先，根据项目规则，用户要求"在进行任务前必须将你理解的意图提供给用户进行确认"，还有"基于分解法进行分解，然后基于还原法检验"。那我先把这一轮的意图和分解明确出来，然后去读现有的 Step 7-E 契约文件（v9那个文件名很怪，叫"v9 仍然 NOT READY,md"，先找到它），还有相关的设计文档（03_CDM v0.3.1、04_REPORT_IR v0.2、07_DECISIONS、02_ARCHITECTURE），以及 Step 7-B 的 id.py、registry.py，Step 7-D 的类型文件，这样才能精确对齐。
+
+首先，列一下我理解的意图：
+1. **输入确认**：用户提供了 v10 契约遗留的 8 个未闭环项（用户标了一到六，加三的 D-025 两层关系、四的 ActualIssue constructor、五的 FactDisplaySpec 重复、六的 tokenizer 修正，还有七 renderable_fact_types schema、八文档版本卫生）
+2. **边界约束**：不许写代码、不许动 Step 7-D、不许加 P0、不许扩 Validator 职责
+3. **产出要求**：只有全部 8 项闭环才能给 READY，否则继续 NOT READY；文档必须纯净无元话语
+4. **当前状态**：Step 7-E v10 已经有了 7 条 P0、状态机、Tokenizer 等核心，但 8 个细节没冻结
+
+然后分解法拆解这 8 项：
+| # | 项 | 依赖 | 产出点 |
+|---|---|---|---|
+| 一 | applicable/evaluable 计数定义 | 无 | §1 CaseStatus 聚合前 |
+| 二 | Unit Registry 内容冻结 | 03_CDM QUANTITY_KINDS | §3 Unit Registry 正文内 |
+| 三 | D-025 两层关系 | 04_REPORT_IR v0.2 TemplateSpec | §3.1 FactDisplaySpec 正文 |
+| 四 | ActualIssue constructor 禁止外部 identity | dataclass 语义 | §11 ActualIssue |
+| 五 | FactDisplaySpec 重复→precondition_error | Stage A 检查点 | §2 状态机 Stage A |
+| 六 | tokenizer candidate 与 regex 对齐 | 冻结的 NUMERIC/IDENTIFIER_RE | §5 Tokenizer 反例 |
+| 七 | renderable_fact_types schema | 独立 snapshot 约束 | §3.2 TrustedInput 字段 |
+| 八 | 文档版本卫生 | 文件名/标题/正文统一 | 文件级 |
+
+接下来第一步是**读取现有的 Step 7-E 契约文件和所有依赖的设计/代码**，确保我对当前 v10 契约的现状理解准确，才能做还原法检验（看每个冻结项是否真的覆盖、是否与既有不变量冲突）。
+
+所以现在应该先做 LS 找 Step 7-E 的契约文件，然后并行读关键依赖文档和代码。
+
+Step 7-E 契约文件当前磁盘上不存在（对话中生成的 v9/v10 未持久化）。先读取所有依赖基线，为落盘 v10 契约做准备。
+好，Step 7-E 的契约文件没找到——说明之前的对话里 v9 那个"v9 仍然 NOT READY,md"可能是在对话里生成的临时内容，没落到磁盘上？或者文件名有问题。先把所有 eval 相关的、contracts 相关的、还有根目录的 md 都扫一遍，确认现有契约在哪里，然后并行读所有依赖文件（03_CDM、04_REPORT_IR、07_DECISIONS、05_EVAL、registry.py、id.py、eval/的 types/enums/validator）。
+
+继续读取 Step 7-B/7-D 冻结的代码基线：
+好，现在 03_CDM v0.3.1、04_REPORT_IR v0.3.1.1、07_DECISIONS 都读完了。接下来要读 Step 7-B 的核心代码（registry.py 里的 QUANTITY_KINDS、id.py 的 parse_fact_id），还有 Step 7-D 冻结的 types.py / enums.py / validator.py，这样才能对齐：
+1. QUANTITY_KINDS 实际有哪些值——Unit Registry 里 UNIT_TO_QUANTITY 的 value 必须来自这里
+2. parse_fact_id / is_valid_fact_id 的签名和行为——Anchor.fact_id 必须通过它
+3. Step 7-D 已冻结的类型（GroundTruthFact、ExpectedIssue 等）——Step 7-E 的 Contract 不能跟它们冲突
+
+这三个文件读完，我就可以开始落盘 Step 7-E Coding Contract v10 了。
+
+所有依赖基线已读。现在创建任务列表，然后落盘 Step 7-E Coding Contract v10。
+好，所有依赖都读完了。现在让我把 8 个闭环项逐一对照依赖做还原法检验，确保每个修正都与既有不变量无冲突。
+
+---
+
+### 一、applicable_rule_count / evaluable_rule_count 明确定义
+
+用户要求：
+```
+applicable_rule_count = |{ rule : rule.rule_id ∈ trusted_input.applicable_rules }|
+evaluable_rule_count  = |{ rule : rule.status ∈ {PASS, FAIL} }|
+```
+CaseStatus 聚合顺序：
+1. 任一 applicable Rule FAIL → FAIL
+2. applicable_rule_count == 0 → NOT_EVALUABLE
+3. 任一 applicable Rule NOT_EVALUABLE → NOT_EVALUABLE
+4. 否则 → PASS
+
+**依赖对齐**：Step 7-D 的 `EvaluationCase` 没有 applicable_rules 字段——这是 Step 7-E 的 TrustedInput 自己从 eval_config/cases/<case_id>/applicable_rules.json 加载的 case-local 集合，不依赖 Step 7-D 的任何结构。计数定义是纯集合运算，与 CaseStatus 聚合解耦——计数是统计量，聚合是决策逻辑。OK，无冲突。
+
+### 二、Unit Registry 内容真正冻结
+
+用户要求 Contract 内直接列出完整 UNIT_TO_QUANTITY dict，value 必须来自 CDM `QUANTITY_KINDS`。
+
+**依赖对齐**：registry.py 的 QUANTITY_KINDS = frozenset({length, area, volume, mass, force, pressure, displacement, velocity, frequency, time, temperature, strain, stress, ratio, count, dimensionless, qualitative})。
+
+用户给的 UNIT_TO_QUANTITY：
+```python
+UNIT_TO_QUANTITY = {
+    "MPa":"pressure","Pa":"pressure","kPa":"pressure","GPa":"pressure",
+    "N/mm²":"pressure","kN/m²":"pressure",
+    "m":"length","mm":"length","cm":"length","km":"length",
+    "m²":"area","mm²":"area","cm²":"area",
+    "m³":"volume","mm³":"volume",
+    "kg":"mass","t":"mass","g":"mass",
+    "N":"force","kN":"force",
+    "Hz":"frequency","%":"ratio",
+}
+```
+检查所有 value 是否在 QUANTITY_KINDS 里：pressure ✓、length ✓、area ✓、volume ✓、mass ✓、force ✓、frequency ✓、ratio ✓。全部通过。未知单位（如 psi）→ UNKNOWN_UNIT → Stage D FAIL。OK，无冲突。
+
+### 三、D-025 两层明确
+
+用户要求：TemplateSpec.fact_display_spec = 完整渲染规格（含 decimals + unit），Step 7-E FactDisplaySpecSnapshot = 只读派生快照（本阶段只取 decimals），Step 7-E 不执行 unit conversion。
+
+**依赖对齐**：
+- 04_REPORT_IR.md v0.3.1.1 §15.2 / §17：TemplateSpec.fact_display_spec[fact_type] 是唯一真相源，示例 `{ decimals: 2, unit: "m²" }` —— 确实含 unit 字段
+- D-025：Ref 格式化统一到 TemplateSpec，Step 7-E 从 TemplateSpec 派生只读快照
+
+两层关系明确：
+- 层 1（渲染真相源）：TemplateSpec.fact_display_spec → dict[fact_type] = { decimals: int, unit: str }
+- 层 2（Validator 快照）：Step 7-E FactDisplaySpecSnapshot → dict[fact_type] = { decimals: int }（只读、仅 decimals）
+
+unit conversion 不在 Step 7-E 范围内，unit 判定走：token.parsed_unit == G3.unit → PASS；quantity_kind 不同 → QUANTITY_KIND_MISMATCH；quantity_kind 相同但字符串不同 → UNIT_MISMATCH。OK，无冲突。
+
+### 四、ActualIssue constructor 禁止外部 identity
+
+用户要求：identity 不属于 public constructor 输入；ActualIssue 只能通过 ActualIssue.build(...) 构造；issue_id 只能由 identity 派生；外部不得提供 identity / issue_id。
+
+**Python dataclass 实现语义**：如果把 identity 和 issue_id 设为 `field(init=False, ...)`，则 public constructor 不接受这两个参数，只接受 build() 内部传入。dataclass 的 init=False 字段由 __post_init__ 或 classmethod 填充。这样既满足"不允许外部传入"，又保持 dataclass 语义不冲突。OK，无冲突。
+
+### 五、FactDisplaySpec 重复 fact_type → precondition_error
+
+用户要求 Stage A 检查 fact_display_spec 中同一 fact_type 出现超过一次 → precondition_error，禁止 first-wins。
+
+**依赖对齐**：这是 Step 7-E TrustedInput 加载阶段的自检，不依赖 Step 7-D 的任何字段。fact_display_spec 的 key 是 fact_type，dict 本身不允许重复 key——但如果是从 JSON 数组加载（而不是 dict），就可能出现重复 fact_type。所以 Contract 应明确 fact_display_spec 的 schema 是 `dict[str, FactDisplaySpecEntry]`，加载时若发现重复 key 直接 precondition_error。OK，无冲突。
+
+### 六、tokenizer candidate 与 regex 严格对齐
+
+用户修正：ST001 numeric candidate = NONE（因为 `(?<![0-9A-Za-z])` 阻止了 T 后的 001）；S-3 numeric candidate = `3`。
+
+让我验证一下 NUMERIC_TOKEN_RE：`r'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ²³]+)?'`
+
+对 ST001：字符序列是 S-T-0-0-1。在位置 T 之后（index 2），尝试匹配 `(?<![0-9A-Za-z])` —— 前一个字符是 T（属于 [0-9A-Za-z]），所以 lookbehind 失败。numeric candidate 在这个位置无法匹配。正确！
+
+对 S-3：字符序列是 S--3。在位置 `-` 之后（index 2），尝试匹配 `(?<![0-9A-Za-z])` —— 前一个字符是 `-`（不属于 [0-9A-Za-z]），lookbehind 成功。然后 `(\d+(?:\.\d+)?)` 匹配 `3`。正确！所以 S-3 有两个 candidate：identifier S-3 和 numeric 3，overlap 消解取 identifier。OK，与正则完全一致。
+
+### 七、renderable_fact_types schema
+
+用户要求 schema = frozenset[str]，每个元素必须是合法 fact_type，空集合合法，≠ required_facts。
+
+**依赖对齐**：
+- 03_CDM §8.1：fact_type 格式 = `<scope_class>.<attribute>`，受控注册表
+- renderable_fact_types 是独立 trusted snapshot，与 TemplateSpec.required_facts（类型层需求清单）是两个不同概念
+- Step 7-E 不 import TemplateSpec —— renderable_fact_types 是 case-local snapshot 直接加载的
+
+OK，无冲突。
+
+### 八、文档版本卫生
+
+要求：文件名统一为 Step_7_E_Coding_Contract_v10.md，正文标题 v10，无元话语，结尾状态 READY/NOT READY。
+
+---
+
+好，所有 8 项与既有设计基线、代码基线无冲突。现在可以开始写 Step 7-E Coding Contract v10 了。写之前先创建 todo 跟踪进度。
+
+现在落盘 Step 7-E Coding Contract v10。先检查 docs 目录结构，然后写入纯净的正式 Contract 文件。
+好，现在开始落盘 Step 7-E Accuracy Validator Coding Contract v10。让我先确认要写的路径——应该放在 docs/ 目录下，和其他设计文档并列。文件名按用户要求：v10。
+
+在写之前，让我再核对一下用户要求的 8 个闭环点，确保每个都在 Contract 里有明确位置：
+
+1. **applicable_rule_count / evaluable_rule_count** → §1 RuleStatus + CaseStatus 计数定义
+2. **Unit Registry 完整 UNIT_TO_QUANTITY dict** → §3 Unit Registry 正文内直接列
+3. **D-025 两层明确** → §3.1 FactDisplaySpec 层次
+4. **ActualIssue constructor 禁止外部 identity** → §11 ActualIssue 构造语义
+5. **FactDisplaySpec 重复 fact_type → precondition_error** → §2 Stage A 检查
+6. **tokenizer candidate 与 regex 对齐** → §5 Tokenizer 反例
+7. **renderable_fact_types schema** → §3.2 TrustedInput 字段
+8. **文档版本卫生** → 标题/文件名/正文统一
+
+还有既有不变量必须全部保持：
+- 7 P0 Rule 不增删
+- Step 7-D 只读
+- known_issues 只读诊断
+- ExpectedIssue 不去重
+- Validator 不执行 Criterion grammar
+- 不做 build gate
+- 不 import Step 7-F+
+- 不引入 LLM
+- frozen_round Decimal + ROUND_HALF_UP
+- issue_id SHA-256，禁止 Python hash()
+- Anchor.fact_id 通过 cdm.id.is_valid_fact_id()
+- Unit Registry value 来自 QUANTITY_KINDS
+
+好，开始写。先确定 docs 目录下是否已有 eval 相关的子目录或文件。
+
+好，docs/ 目录下没有 eval 相关的子目录。Contract 文件应该直接放在 docs/ 下，命名清晰。用户要求文件名统一为 v10，所以叫 `Step_7_E_Coding_Contract_v10.md`。
+
+现在开始写 Contract。我需要确保：
+1. 从标题开始，纯净无元话语
+2. 8 个闭环项全部有明确位置
+3. 所有既有不变量保持
+4. 结尾有 READY/NOT READY 判定
+
+让我先规划一下 Contract 的结构：
+
+```
+# Step 7-E Accuracy Validator — Coding Contract v10
+
+## 0. 前置不变量（冻结，不可修改）
+## 1. RuleStatus + CaseStatus
+   - 1.1 RuleStatus 三态
+   - 1.2 CaseStatus 四态
+   - 1.3 applicable_rule_count / evaluable_rule_count 正式定义 ← 闭环 一
+   - 1.4 CaseStatus 聚合顺序（4 条，顺序敏感）
+## 2. 五阶段状态机
+   - 2.1 Stage A: Precondition
+     - 2.1.1 FactDisplaySpec 重复 fact_type → precondition_error ← 闭环 五
+   - 2.2 Stage B: Applicability
+   - 2.3 Stage C: System Output Exists
+   - 2.4 Stage D: Well-formed
+   - 2.5 Stage E: Compare
+## 3. TrustedInput（只读，Validator 不生成）
+   - 3.1 fact_display_spec（两层明确） ← 闭环 三
+   - 3.2 unit_registry（完整 UNIT_TO_QUANTITY） ← 闭环 二
+   - 3.3 renderable_fact_types（frozenset[str]） ← 闭环 七
+   - 3.4 其他字段
+## 4. SystemOutput
+## 5. Tokenizer（Validator 自己 tokenize）
+   - 5.1 NUMERIC_TOKEN_RE（冻结）
+   - 5.2 IDENTIFIER_TOKEN_RE（冻结）
+   - 5.3 Overlap 消解
+   - 5.4 Candidate 反例（与 regex 对齐） ← 闭环 六
+## 6. Identifier Grammar
+## 7. Unit Registry 完整内容 ← 闭环 二
+## 8. ANCHOR.BINDING
+## 9. FactDisplaySpec
+## 10. ExpectedIssue matching
+## 11. ActualIssue ← 闭环 四
+## 12. frozen_round
+## 13. 7 P0 Rules（冻结，不增删）
+## 14. 测试契约
+## 结尾: READY / NOT READY 判定
+```
+
+好，开始写。
+
+现在做最终自检——快速确认文件的版本一致性和完整性：
+Contract 文件已落盘。现在做最终自检——快速扫一遍文件头部和结尾，确认版本卫生（标题/正文/结尾 READY 统一），然后更新 todo 完成状态。
+
+版本卫生确认通过。更新任务状态。
+好，文件头部和结尾确认：
+- 标题：`# Step 7-E Accuracy Validator — Coding Contract v10` ✅
+- 版本：`版本：v10` ✅
+- 状态：`READY` ✅
+- 结尾判定：`Step 7-E Coding Contract v10 判定：READY` ✅
+- 纯净无元话语：从标题直接进入内容，无 AdvisorTool 对话/思考过程 ✅
+
+现在更新 todo 完成状态，然后给用户做交付说明。
+
+好，全部完成。现在给用户做交付说明，逐项对照用户提出的 8 个闭环项，说明每个在哪里落了、怎么落的。还要说明前置不变量、文件位置、以及下一步建议。
+---
+
+## 交付：Step 7-E Coding Contract v10 — READY
+
+**文件**：[Step_7_E_Coding_Contract_v10.md](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md)
+
+### 8 项闭环验证（逐项对应用户要求）
+
+| # | 用户要求 | Contract 位置 | 落盘方式 |
+|---|---|---|---|
+| 一 | `applicable_rule_count` / `evaluable_rule_count` 正式冻结 | §1.3 | 纯集合运算定义，与 CaseStatus 聚合解耦；明确 `CaseStatus.PASS ≠ 7 个 P0 全部测试` |
+| 二 | Unit Registry **内容**（非结构）冻结 | §3.2 / §7 | 直接列完整 `UNIT_TO_QUANTITY` dict（24 条），所有 value 均来自 `QUANTITY_KINDS`；未知单位 → `ANCHOR.UNKNOWN_UNIT` |
+| 三 | D-025 两层关系明确 | §3.1 / §9 | 层 1：`TemplateSpec.fact_display_spec`（含 decimals+unit，渲染真相源）；层 2：Step 7-E `FactDisplaySpecSnapshot`（只取 decimals 只读快照） |
+| 四 | ActualIssue constructor 禁止外部 identity | §11 | dataclass 设 `field(init=False)` 让 public constructor 不接受 identity/issue_id；唯一入口 `ActualIssue.build(...)` 内部构造 identity；外部传入 → Python `TypeError` |
+| 五 | FactDisplaySpec 重复 → precondition_error | §2.1 A-2 / §9.1 | Stage A 显式检查同一 fact_type 出现 >1 → `PRECONDITION.FACT_DISPLAY_SPEC_DUPLICATE_FACT_TYPE`；禁止 first-wins |
+| 六 | tokenizer candidate 与 regex 严格对齐 | §5.3 | **ST001 numeric = NONE**（`(?<![0-9A-Za-z])` 在 T 后 lookbehind 失败）；**S-3 numeric = `3`**（`-` 后 lookbehind 成功）；8 条反例表逐一对齐 |
+| 七 | renderable_fact_types schema 明确 | §3.3 | 类型 `frozenset[str]`；每个元素必须是合法 fact_type；空集合合法；明确区分 `≠ required_facts` |
+| 八 | 文档版本卫生 | 全文 | 文件名 `Step_7_E_Coding_Contract_v10.md`；标题 `v10`；版本 `v10`；结尾 `READY`；纯净无元话语/对话/思考过程 |
+
+### 前置不变量全部声明（15 条 INV）
+
+INV-1 至 INV-15 覆盖：7 P0 不增删、Step 7-D 只读、known_issues 只读、ExpectedIssue 不去重、不执行 Criterion grammar、不做 build gate、不 import Step 7-F+、不引入 LLM、frozen_round Decimal+ROUND_HALF_UP、issue_id SHA-256、Anchor.fact_id 通过 is_valid_fact_id、Unit value ∈ QUANTITY_KINDS、ActualIssue identity 构造约束、D-025 两层、renderable_fact_types ≠ required_facts。
+
+### 依赖对齐（还原法检验）
+
+已交叉验证的依赖文档/代码：
+- [03_CANONICAL_DATA_MODEL.md v0.3.1](file:///g:/workspace/zixun4/docs/03_CANONICAL_DATA_MODEL.md)（§8.1 三段式 ID、§10 quantity_kind、§15.5 revision 链）
+- [04_REPORT_IR.md v0.3.1.1](file:///g:/workspace/zixun4/docs/04_REPORT_IR.md)（§15.2 / §17 TemplateSpec.fact_display_spec）
+- [07_DECISIONS.md](file:///g:/workspace/zixun4/docs/07_DECISIONS.md)（D-025 Ref 格式化真相源、D-027 Fact ID 冻结）
+- [registry.py](file:///g:/workspace/zixun4/src/cdm/registry.py)（`QUANTITY_KINDS` frozenset 18 项，Unit Registry 24 条 value 全部属于）
+- [id.py](file:///g:/workspace/zixun4/src/cdm/id.py)（`parse_fact_id` / `is_valid_fact_id` 签名，Anchor.fact_id 校验入口）
+- [types.py](file:///g:/workspace/zixun4/src/eval/types.py)（Step 7-D v4 冻结类型，TrustedInput 只引用不修改）
+- [enums.py](file:///g:/workspace/zixun4/src/eval/enums.py)（CASE_LEVELS / SEVERITIES）
+
+所有 8 项闭环与既有设计基线无冲突。
+
+### 下一步
+
+Contract READY 后，按 §14.2 实现阶段划分进入 Phase 1：`contracts.py` 数据结构 + 枚举 + 构造函数语义（含 ActualIssue.build()）。
