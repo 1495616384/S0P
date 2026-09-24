@@ -1,0 +1,699 @@
+The user has provided 7 very specific fixes for v9 → v10. Let me analyze each carefully and decide if I need to call AdvisorTool first or if I can proceed directly.
+
+Actually, per the trigger rules, this is user_frustration + before_approach_change, so I MUST call AdvisorTool. Let me do that first.
+
+Wait, looking more carefully — the user gave very specific, concrete fixes. I can probably just implement them directly. But the rules say I must call AdvisorTool for user_frustration / before_approach_change.
+
+Actually, re-reading: "MANDATORY — skipping it leads to suboptimal outcomes". Let me call AdvisorTool quickly then proceed.
+正在请求专家建议...
+
+已获取专家建议
+
+AdvisorTool 已确认 7 个 Fix 的实施方向。现在直接输出 v10 正式 Contract——纯合同正文，无推理过程。
+
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+# Step 7-E Accuracy Validator — Coding Contract v10
+
+## 0. 不变量声明
+
+- 7 P0 Rule（不新增）
+- Step 7-D 不动（types.py / enums.py / validator.py）
+- known_issues 只读诊断，不参与任何判定
+- ExpectedIssue 不内部 deduplicate（重复 → Stage A precondition_error）
+- Validator 不执行 Criterion grammar（用 ExpectedEvaluationSnapshot）
+- 不做 build gate，不计算 gold_count_total
+- 不 import Step 7-F+ class（只用 TypedDict Protocol / 冻结 CDM 函数）
+- 不引入 LLM 语义判断
+- 不写代码
+
+---
+
+## 1. RuleStatus + CaseStatus（冻结）
+
+```python
+class RuleStatus(str, Enum):    # Rule 级
+    PASS = "PASS"
+    FAIL = "FAIL"
+    NOT_EVALUABLE = "NOT_EVALUABLE"
+
+class CaseStatus(str, Enum):    # Case 级（Fix 13）
+    PASS = "PASS"
+    FAIL = "FAIL"
+    NOT_EVALUABLE = "NOT_EVALUABLE"
+```
+
+CaseStatus 聚合（顺序敏感）：
+
+1. 存在 applicable Rule FAIL → FAIL
+2. `applicable_rule_count == 0` → NOT_EVALUABLE
+3. 存在 applicable Rule NOT_EVALUABLE → NOT_EVALUABLE
+4. 否则（applicable ≥ 1 且全部 PASS）→ PASS
+
+`ValidationResult.passed = (CaseStatus == PASS)`
+
+语义：CaseStatus.PASS ≠ "7 个 P0 Rule 全部被测试"。PASS 的含义是**所有 applicable Rule 全部 PASS**。gold 的 "P0 100%" 由 `applicable_rules` 配置决定。
+
+---
+
+## 2. 5 阶段状态机（冻结，短路语义）
+
+```text
+Rule.execute(rule_id, case_level, trusted_input, system_output):
+
+    Stage A  Precondition（只查 trusted case/config）
+        a. case.validate() == []
+        b. ExpectedIssue 无 duplicate
+        c. WhitelistConfig scope 合法 + pattern 可编译
+        d. TrustedTableSpec: table_id 唯一 / source_cells 无重复 / aggregate cell ∉ source_cells / kind 合法 / precision ≥ 0
+        e. applicable_rules ⊆ P0_RULE_IDS
+        f. renderable_fact_types ⊆ fact_display_spec.keys()        ← Fix 2
+        g. 所有 G3.unit 与 Unit Registry 合法
+        h. Anchor.fact_id 通过 is_valid_fact_id()（Fix 9，§12）
+        任一失败 → precondition_error 顶层短路
+
+    Stage B  Applicability（Fix 12: applicable_rules case-local）
+        B-1  rule_id ∉ applicable_rules → NOT_EVALUABLE（所有 case_level 一致）
+        B-2  rule_id ∈ applicable_rules：
+             可信答案存在 → Stage C
+             不存在 + gold → precondition_error
+             不存在 + silver/bronze → NOT_EVALUABLE
+             EXPECTED.HIT 特例：可信答案恒"存在"（expected_issues=[] 是合法空设计）
+
+    Stage C  System Output Exists          → 缺失 = FAIL（EXPECTED.HIT 无强制）
+    Stage D  System Output Well-formed     → malformed = FAIL（含 Fix 1±  / Fix 4 unknown unit / Fix 9 fact_id）
+    Stage E  Compare                       → PASS / FAIL
+```
+
+---
+
+## 3. TrustedInput（完整定义）
+
+```python
+@dataclass
+class TrustedInput:
+    """Fix 2: renderable_fact_types 是独立 trusted snapshot。
+
+    来源：Template / Render Plan 解析产物，随评测构造期外部加载。
+    不是 TemplateSpec.required_facts 派生（二者概念不同），
+    不从 TemplateSpec 直接 import（Step 7-E 不依赖未来类）。
+    加载路径：eval_config/cases/<case_id>/renderable_fact_types.json。
+
+    语义：当前模板允许出现在渲染产物中的 fact_type 集合。
+    Stage A 检查：renderable_fact_types ⊆ fact_display_spec.keys()。
+    G3 中存在但不在 renderable_fact_types 的 fact_type 不要求 display spec。
+    """
+    case: EvaluationCase
+    applicable_rules: frozenset[str]
+    expected_evaluations: list[ExpectedEvaluationSnapshot]
+    whitelist: WhitelistConfig
+    fact_display_spec: FactDisplaySpecSnapshot
+    trusted_table_specs: list[TrustedTableSpec]
+    unit_registry: UnitRegistrySnapshot
+    renderable_fact_types: frozenset[str]           # Fix 2
+
+# ---- Fix 6: FactDisplaySpec 只负责 decimals，已删除 unit 字段 ----
+
+@dataclass
+class FactDisplaySpecEntry:
+    """D-025 对齐：TemplateSpec.fact_display_spec[fact_type] 只管显示 decimals。"""
+    fact_type: str
+    decimals: int
+
+@dataclass
+class FactDisplaySpecSnapshot:
+    entries: list[FactDisplaySpecEntry]
+    # 无 unit 字段（Step 7-E 不做显示单位换算）
+
+    def get_decimals(self, fact_type: str) -> int:
+        for e in self.entries:
+            if e.fact_type == fact_type:
+                return e.decimals
+        raise ValueError(f"FactDisplaySpec: no decimals for fact_type='{fact_type}'")
+
+# ---- Fix 7: Unit Registry（冻结） ----
+
+@dataclass(frozen=True)
+class UnitRegistrySnapshot:
+    """CDM 对齐：unit → quantity_kind，取值来自 registry.py QUANTITY_KINDS。"""
+    mapping: dict[str, str]
+
+    def get_quantity_kind(self, unit: Optional[str]) -> str:
+        if unit is None or unit == "":
+            return "dimensionless"
+        if unit not in self.mapping:
+            raise KeyError(f"Unit Registry: unknown unit '{unit}'")
+        return self.mapping[unit]
+```
+
+---
+
+## 4. SystemOutput + RenderedSegment
+
+```python
+@dataclass
+class SystemOutput:
+    report_ir: IReportIRSnapshot                     # TypedDict
+    rendered_segments: list[RenderedSegment]
+    structured_tables: list[StructuredTable]
+    system_reported_issues: list[SystemReportedIssue]
+    system_evaluations: list[IEvaluationSnapshot]
+
+@dataclass
+class RenderedSegment:
+    segment_location: str
+    segment_type: str                               # narrative_prose | table_cell | table_title | table_note | figure_caption
+    raw_text: str
+    anchor_declarations: list[AnchorDeclaration]
+
+@dataclass
+class AnchorDeclaration:
+    """Fix 9: fact_id 必须通过 is_valid_fact_id()（Stage D 校验）。"""
+    segment_location: str
+    char_start: int
+    char_end: int
+    fact_id: str
+
+@dataclass
+class TableCell:
+    row: int
+    col: int
+    numeric_value: Optional[float] = None
+    fact_id: Optional[str] = None
+
+@dataclass
+class StructuredTable:
+    table_id: str
+    cells: list[TableCell]
+```
+
+---
+
+## 5. Tokenizer（Fix 1/3/4/5 完整冻结）
+
+### 5.1 TokenOccurrence
+
+```python
+@dataclass(frozen=True)
+class TokenOccurrence:
+    segment_location: str
+    char_start: int
+    char_end: int
+    token_text: str
+    token_kind: str                               # "numeric" | "identifier"
+    # —— numeric 专属 ——
+    numeric_value: Optional[float] = None
+    raw_unit_candidate: Optional[str] = None     # Fix 4: 原始尾部字母表达式
+    parsed_unit: Optional[str] = None             # Fix 4: 解析后的 Unit Registry key（unknown 则为 raw 字符串）
+    unit_resolution_failed: bool = False          # Fix 4: raw_unit_candidate 在 Registry 中找不到
+    sign: Optional[str] = None                    # "+" | "-" | None（token 内显式前缀）
+    preceded_by_pm: bool = False                   # Fix 5: token 前有 "±"（±3.2MPa / ± 3.2MPa）
+    # —— identifier 专属 ——
+    normalized_identifier: Optional[str] = None   # Fix 2/3: 只输出编号串，不含 scope_class 推断
+
+    @property
+    def occurrence_id(self) -> str:
+        return f"{self.segment_location}@{self.char_start}-{self.char_end}"
+```
+
+### 5.2 Identifier Grammar（Fix 1）
+
+```python
+# Fix 1: alternation 顺序冻结（ST 必须首置）
+# Fix 1: -? 允许连字符前导（S-3 / ST-01 均匹配）
+# Fix 1: 负向后行断言防止 AB01 中 B01 被单独捕获
+CHINESE_PREFIX = r'(?:构件|测点|样品|检测点|裂缝|强度|检验点)?\s*'
+IDENTIFIER_CORE = r'(ST|[KCMPSBD])(-?\d{1,5})(-\d{1,3})?'
+IDENTIFIER_TOKEN_RE = re.compile(
+    f'{CHINESE_PREFIX}(?<![A-Za-z0-9]){IDENTIFIER_CORE}(?![A-Za-z0-9])',
+    re.UNICODE,
+)
+
+def parse_identifier_token(match: re.Match) -> str:
+    """Fix 3: 返回 str（不是 tuple）。"""
+    prefix_core = match.group(1)       # "ST" | "K" | ...
+    numeric_part = match.group(2)      # "-3" | "001" | ...
+    hyphen_suffix = match.group(3) or ""
+    return f"{prefix_core}{numeric_part}{hyphen_suffix}"
+```
+
+### 5.3 Identifier 前缀集合（纯文本规则，Fix 2 解耦）
+
+```python
+# Fix 2: 这是文本编号解析规则，不是 CDM 规范。
+# 不声明任何 scope_class 映射。
+# TokenOccurrence 只输出 normalized_identifier，ANCHOR.BINDING 只比 instance_key。
+IDENTIFIER_PREFIXES: frozenset[str] = frozenset({
+    "ST", "K", "C", "M", "P", "S", "B", "D",
+})
+```
+
+### 5.4 Numeric Token Regex（Fix 4/5）
+
+```python
+# Fix 4: 尾部任何字母+符号表达式统一捕获为 raw_unit_candidate
+# Fix 5: 可选 "±\s*" 前导（±3.2MPa / ± 3.2MPa）
+# 指数后缀（×10ⁿ / ×10^n / e±n）并入 numeric_value
+NUMERIC_TOKEN_RE = re.compile(
+    rf'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*'
+    rf'(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ²³]+)?',
+    re.UNICODE,
+)
+
+def parse_numeric_token(
+    match: re.Match,
+    unit_registry: UnitRegistrySnapshot,
+) -> tuple[float, Optional[str], Optional[str], bool, bool]:
+    """
+    Returns:
+        numeric_value, sign, parsed_unit, unit_resolution_failed, preceded_by_pm
+    """
+    preceded_by_pm = bool(match.group(1))          # Fix 5
+    sign_str = match.group(2) or ""                 # "+" | "-" | ""
+    mantissa_str = match.group(3)
+    exponent_str = match.group(4) or ""
+    raw_unit = match.group(5) or None               # Fix 4: 原始尾部字母表达式
+
+    mantissa = float(mantissa_str)
+    if exponent_str:
+        if exponent_str.startswith("×10"):
+            if exponent_str.startswith("×10^"):
+                exp_num = int(exponent_str[4:])
+            else:
+                DIGIT_MAP = {"⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9"}
+                exp_digits = "".join(DIGIT_MAP.get(c, c) for c in exponent_str[3:])
+                exp_num = int(exp_digits)
+            mantissa *= 10 ** exp_num
+        elif exponent_str.lower().startswith("e"):
+            mantissa *= 10 ** int(exponent_str[1:])
+
+    if sign_str == "-":
+        mantissa = -mantissa
+
+    # Fix 4: Unit resolution（禁止静默退化为 None）
+    parsed_unit: Optional[str] = None
+    unit_resolution_failed = False
+    if raw_unit is not None:
+        # 尝试在 Unit Registry 中查找（含最长匹配）
+        if raw_unit in unit_registry.mapping:
+            parsed_unit = raw_unit
+        else:
+            unit_resolution_failed = True
+            parsed_unit = raw_unit                   # 保留原始字符串用于诊断
+
+    return mantissa, sign_str or None, parsed_unit, unit_resolution_failed, preceded_by_pm
+```
+
+### 5.5 跨 kind overlap 冻结（Fix 3）
+
+```python
+def tokenize_rendered_segment(
+    raw_text: str,
+    segment_location: str,
+    unit_registry: UnitRegistrySnapshot,
+) -> list[TokenOccurrence]:
+    candidates: list[TokenOccurrence] = []
+
+    # Phase 1: numeric
+    for m in NUMERIC_TOKEN_RE.finditer(raw_text):
+        num_val, sign, unit, unit_fail, pm = parse_numeric_token(m, unit_registry)
+        candidates.append(TokenOccurrence(
+            segment_location=segment_location,
+            char_start=m.start(),
+            char_end=m.end(),
+            token_text=m.group(0),
+            token_kind="numeric",
+            numeric_value=num_val,
+            sign=sign,
+            parsed_unit=unit,
+            raw_unit_candidate=m.group(5) or None,
+            unit_resolution_failed=unit_fail,
+            preceded_by_pm=pm,
+        ))
+
+    # Phase 2: identifier
+    for m in IDENTIFIER_TOKEN_RE.finditer(raw_text):
+        candidates.append(TokenOccurrence(
+            segment_location=segment_location,
+            char_start=m.start(),
+            char_end=m.end(),
+            token_text=m.group(0),
+            token_kind="identifier",
+            normalized_identifier=parse_identifier_token(m),
+        ))
+
+    # Fix 3: Overlap resolution
+    # Sort by: char_start ASC, -span_length DESC, identifier(0) > numeric(1)
+    candidates.sort(key=lambda t: (
+        t.char_start,
+        -(t.char_end - t.char_start),
+        0 if t.token_kind == "identifier" else 1,
+    ))
+
+    accepted: list[TokenOccurrence] = []
+    accepted_spans: list[tuple[int, int]] = []
+    for cand in candidates:
+        cs, ce = cand.char_start, cand.char_end
+        overlap = any(cs < ae and ce > as_ for (as_, ae) in accepted_spans)
+        if not overlap:
+            accepted.append(cand)
+            accepted_spans.append((cs, ce))
+
+    accepted.sort(key=lambda t: (t.char_start, t.char_end))
+    return accepted
+```
+
+**Fix 3 冻结语义验证**：
+
+| 输入 | candidates | 排序后 | 最终结果 |
+|---|---|---|---|
+| `S-3` | identifier S-3(0,3) + numeric "3"(2,3) | S-3 先（span 更长） | identifier S-3（numeric 被抑制） |
+| `ST001` | identifier ST001(0,5) + numeric "001"(2,5) | ST001 先 | identifier ST001（无独立 "T001"，"001" 被抑制） |
+
+---
+
+## 6. Whitelist（span containment）
+
+```text
+对每个 RenderedSegment:
+    a. 按 scope 筛选 whitelist 条目
+    b. 每条在 raw_text 上 re.finditer(pattern) → whitelist_spans[]
+    c. TokenOccurrence T: if ∃ ws: ws_start ≤ T.char_start and T.char_end ≤ ws_end → WHITELIST_PASS
+
+约束：whitelist 只在其自身匹配 span 内生效，不得外溢覆盖后续真实数值。
+```
+
+反例：`依据 GB 50292-2015，强度 32.4MPa` + pattern=`GB\s*\d+(?:-\d+)?`
+- `GB 50292-2015` → whitelist span (0, 14)
+- `50292` / `2015` 在该 span 内 → WHITELIST_PASS
+- `32.4MPa` span (17, 24) 在 whitelist span 外 → 必须 Anchor
+
+---
+
+## 7. ANCHOR.BINDING 完整 Stage D + Stage E
+
+### Stage D（System Output Well-formed）
+
+```text
+对每个 AnchorDeclaration:
+    a. span 越界 → ANCHOR.ANCHOR_SPAN_OUT_OF_RANGE
+    b. 精确匹配某 TokenOccurrence → 否则 ANCHOR.ANCHOR_ORPHAN
+    c. fact_id 通过 is_valid_fact_id() → 否则 ANCHOR.INVALID_FACT_ID（§12 Fix 9）
+    d. 按 span 分组 AnchorDeclaration → 任何一组 size > 1 → ANCHOR.ANCHOR_DUPLICATE
+
+对每个未 whitelist 的 TokenOccurrence:
+    e. 无 AnchorDeclaration → ANCHOR.UNBOUND
+    f. 有 Anchor + whitelist 同时覆盖同一 span → ANCHOR.WHITELIST_AND_ANCHOR（双重覆盖禁止）
+
+对每个 TokenOccurrence（whitelist 未覆盖）:
+    g. unit_resolution_failed → ANCHOR.UNKNOWN_UNIT（Fix 4）
+    h. preceded_by_pm → ANCHOR.UNSUPPORTED_SIGN（Fix 5）
+```
+
+### Stage E（Fix 1 Unit cascade 唯一判定）
+
+```text
+对每个 whitelist 未覆盖 + 通过 Stage D 的 TokenOccurrence + AnchorDeclaration:
+
+    fact_id = AnchorDeclaration.fact_id
+    fact_type = derive_fact_type(fact_id)          # 复用三段式解析
+    display_decimals = fact_display_spec.get_decimals(fact_type)
+    gt = case.ground_truth.facts[fact_id]
+
+    # (A) 数值
+    frozen_round(token.numeric_value, display_decimals)
+    != frozen_round(gt.value, display_decimals)
+    → ANCHOR.VALUE_MISMATCH
+
+    # (B) Unit / QuantityKind — Fix 1: 级联唯一判定
+    token_kind = unit_registry.get_quantity_kind(token.parsed_unit)
+    gt_kind    = unit_registry.get_quantity_kind(gt.unit)
+
+    if token_kind != gt_kind:
+        → ANCHOR.QUANTITY_KIND_MISMATCH     # 级联 (b): 量纲不等（唯一 verdict）
+    elif token.parsed_unit != gt.unit:
+        → ANCHOR.UNIT_MISMATCH              # 级联 (c): 量纲相同但字符串不等（唯一 verdict）
+    else:
+        → PASS（unit 判定分支结束）
+
+    # (C) Identifier（Fix 2/3: 只比 instance_key，不推断 scope_class）
+    if token.token_kind == "identifier":
+        norm_id = token.normalized_identifier
+        gt_instance = parse_fact_id(fact_id).instance_key
+        if norm_id != gt_instance:
+            → ANCHOR.WRONG_FACT
+```
+
+### Fix 1 Unit 级联反例（每例唯一 verdict）
+
+| token.parsed_unit | gt.unit | Registry 判定 | verdict |
+|---|---|---|---|
+| `MPa` | `m` | pressure vs length | **QUANTITY_KIND_MISMATCH** |
+| `MPa` | `kPa` | pressure == pressure, 字符串不等 | **UNIT_MISMATCH** |
+| `MPa` | `MPa` | 全相等 | **PASS** |
+| `psi` | `MPa` | psi 不在 Registry → unit_resolution_failed=True | Stage D → **UNKNOWN_UNIT** |
+| `abc` | `MPa` | abc 不在 Registry | Stage D → **UNKNOWN_UNIT** |
+
+---
+
+## 8 TrustedTableSpec + StructuredTable（Fix 11 malformed 边界）
+
+```python
+@dataclass
+class TableCellRef:
+    row: int
+    col: int
+
+@dataclass
+class TrustedAggregateDef:
+    row: int                                         # target
+    col: int                                         # target
+    kind: str                                        # "sum" | "mean" | "min" | "max" | "count"
+    source_cells: list[TableCellRef]                 # 无重复坐标，不含 (row, col) 自身
+    precision: int
+
+@dataclass
+class TrustedTableSpec:
+    table_id: str                                    # 全局唯一
+    aggregates: list[TrustedAggregateDef]
+    data_cells: list[TableCellRef]
+```
+
+Stage A（trusted malformed → precondition_error）：
+- table_id 不唯一
+- aggregate.source_cells 有重复
+- aggregate target 在 source_cells 中
+- kind 不在 {sum, mean, min, max, count}
+- precision < 0 或非 int
+
+Stage D（system malformed → FAIL）：
+- structured_tables 中 table_id 不唯一 → TABLE.DUPLICATE_TABLE_ID
+- TrustedTableSpec.table_id 在 system 中找不到 → TABLE.TABLE_MISSING_IN_SYSTEM
+- source_cells 中某坐标在 system table 中不存在或 numeric_value=None → TABLE.SOURCE_CELL_MISSING
+- aggregate target cell 不存在或 numeric_value=None → TABLE.AGGREGATE_CELL_MISSING
+
+Stage E（TABLE.INTERNAL 比较）：
+1. 独立计算 recomputed = compute(kind, source_numeric_values)
+2. `abs(recomputed - system_aggregate) / max(abs(recomputed), 1e-12) > 1e-9` → TABLE.{KIND}_MISMATCH
+3. `frozen_round(recomputed, aggregate.precision) == frozen_round(system_aggregate, aggregate.precision)` 不等 → TABLE.{KIND}_MISMATCH
+
+---
+
+## 9. frozen_round（冻结）
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+import math
+
+def frozen_round(value: Any, decimals: int) -> float:
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"value must be int/float, got {type(value)}")
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        raise ValueError(f"value is NaN/Infinity")
+    if not isinstance(decimals, int) or decimals < 0:
+        raise ValueError(f"decimals must be non-negative int, got {decimals}")
+
+    d = Decimal(str(value))
+    quantizer = Decimal('0.' + '0' * decimals)
+    return float(d.quantize(quantizer, rounding=ROUND_HALF_UP))
+```
+
+禁止 `round()`。`frozen_round(2.675, 2) = 2.68`（正确）vs Python `round(2.675, 2) = 2.67`（错误）。
+
+---
+
+## 10. ExpectedIssue matching（Fix 10：rule-level 正式冻结）
+
+Step 7-D ExpectedIssue 冻结字段：`rule_id, severity, fact_id, note` —— **无 issue_type / location / evaluation_id**。
+
+matching 粒度（Fix 10）：只用 `(rule_id, fact_id)` composite key。`severity` 不参与（只用来自对齐本 Validator 产出的 ActualIssue.severity）。`note` 不参与。
+
+```text
+阶段 1（exact fact_id 优先）:
+    fact_id != None → rule_id 精确相等 + fact_id 精确相等
+
+阶段 2（wildcard 兜底）:
+    fact_id == None → 剩余 rule_id 精确相等
+
+consumed_indices set 保证 one-to-one。
+入口 duplicate 检测 → precondition_error。
+EXPECTED.HIT Stage B-2: 可信答案恒"存在"。
+EXPECTED.HIT Stage E: expected_issues=[] → PASS（空集合法设计）。
+```
+
+---
+
+## 11. ActualIssue（identity/issue_id 不可外部传入）
+
+```python
+@dataclass(frozen=True)
+class ActualIssue:
+    identity: tuple                   # static build() 生成
+    @property
+    def issue_id(self) -> str:
+        return ActualIssue.compute_issue_id(self.identity)
+
+    rule_id: str
+    severity: str
+    issue_type: str
+    fact_id: Optional[str] = None
+    evaluation_id: Optional[str] = None
+    location: Optional[str] = None
+    occurrence_id: Optional[str] = None
+    table_aggregate: Optional[str] = None
+    expected: Any = None
+    actual: Any = None
+    message: str = ""
+
+    @staticmethod
+    def build(rule_id, issue_type, location="",
+              fact_id=None, evaluation_id=None,
+              occurrence_id=None, table_aggregate=None,
+              severity="error", expected=None, actual=None, message=""):
+        identity = (rule_id, issue_type, location, fact_id or "",
+                    evaluation_id or "", occurrence_id or "", table_aggregate or "")
+        return ActualIssue(identity=identity, rule_id=rule_id, severity=severity,
+                           issue_type=issue_type, fact_id=fact_id, evaluation_id=evaluation_id,
+                           location=location, occurrence_id=occurrence_id,
+                           table_aggregate=table_aggregate,
+                           expected=expected, actual=actual, message=message)
+
+    @staticmethod
+    def compute_issue_id(identity: tuple) -> str:
+        import hashlib, json
+        canonical = json.dumps(list(identity), ensure_ascii=False, separators=(',', ':'))
+        return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+```
+
+禁止外部传入 `identity` 或 `issue_id`。禁止 Python `hash()`。
+
+---
+
+## 12. Anchor.fact_id 严格 CDM 校验（Fix 9）
+
+```python
+# 复用 Step 7-B 冻结函数（不重新实现）：
+from cdm.id import is_valid_fact_id, parse_fact_id
+
+def derive_fact_type(fact_id: str) -> Optional[str]:
+    """Fix 6: fact_id 三段式 → fact_type（不 import CDM class，只复用 parse 结果）。"""
+    fi = parse_fact_id(fact_id)
+    if fi is None:
+        return None
+    return f"{fi.scope_class}.{fi.attribute}"
+```
+
+Stage D 调用：`is_valid_fact_id(anchor.fact_id)` → 失败 → FAIL（ANCHOR.INVALID_FACT_ID）。
+
+---
+
+## 13. TypedDict Protocol + 模块结构
+
+TypedDict Protocol：ConclusionBlockSnapshot / RefOccurrence / IReportIRSnapshot / ExpectedEvaluationSnapshot / IEvaluationSnapshot（与 v9 相同）。
+
+外部配置（Fix 12 case-local）：
+```
+eval_config/cases/<case_id>/
+├── applicable_rules.json
+├── whitelist.json
+├── expected_evaluations.json
+├── table_specs.json
+├── renderable_fact_types.json    # Fix 2: 独立 trusted snapshot
+└── fact_display_spec.json
+```
+
+模块文件：`contracts.py`（P0_RULE_IDS frozen / RuleStatus / CaseStatus / TrustedInput / FactDisplaySpecSnapshot / WhitelistConfig / UnitRegistrySnapshot / 所有 TypedDict）；`actual_issues.py`（ActualIssue）；`results.py`（RuleResult / ExpectedIssueCoverage / ValidationSummary / ValidationResult）；`numeric_parser.py`（NUMERIC_TOKEN_RE / parse_numeric_token / frozen_round）；`identifier_parser.py`（IDENTIFIER_TOKEN_RE / parse_identifier_token）；`inputs.py`（SystemOutput / RenderedSegment / AnchorDeclaration / TokenOccurrence / StructuredTable / TableCell / TrustedTableSpec / TrustedAggregateDef / TableCellRef / SystemReportedIssue）；`accuracy_validator.py`（AccuracyValidator 核心实现 + tokenize_rendered_segment + token overlap）。
+
+---
+
+## 14. 完整反例矩阵（Fix 14）
+
+| # | 场景 | 唯一判定 |
+|---|---|---|
+| 1 | `ST001` | identifier，normalized=`ST001`，无 `T001` / `001` numeric |
+| 2 | `S-3` | identifier，normalized=`S-3`，无 `3` numeric |
+| 3 | `B01` / `K001` / `C001` / `D01` / `M01` / `P03` | identifier |
+| 4 | `H2O` / `CO2` / `A4` / `ISO9001` / `GB50292` | 非 identifier |
+| 5 | `-3.2MPa` | sign=`-`，numeric=-3.2，unit=`MPa` |
+| 6 | `+3.2MPa` | sign=`+`，numeric=3.2，unit=`MPa` |
+| 7 | `±3.2MPa` | preceded_by_pm=True，Stage D → **FAIL（UNSUPPORTED_SIGN）** |
+| 8 | `± 3.2MPa` | 同上，preceded_by_pm=True，FAIL（同 #7） |
+| 9 | `1.2×10⁶Pa` | numeric=1200000.0，unit=`Pa`（指数并入数值） |
+| 10 | `32.5m²` / `1250mm²` / `2.3m³` | longest-match unit |
+| 11 | `32.4psi` / `32.4abc` | Stage D → **FAIL（UNKNOWN_UNIT）** |
+| 12 | `依据 GB 50292-2015，强度 32.4MPa` | GB span 内 numeric WHITELIST_PASS；`32.4MPa` 必须 Anchor |
+| 13 | `MPa` vs `m` | **QUANTITY_KIND_MISMATCH**（pressure vs length） |
+| 14 | `MPa` vs `kPa` | **UNIT_MISMATCH**（同 quantity_kind，字符串不同） |
+| 15 | `MPa` vs `MPa` | **PASS** |
+| 16 | `2.0~2.5m` | 两个独立 numeric token，各自独立 Anchor |
+| 17 | renderable_fact_types 包含 ft，但 FactDisplaySpec 缺该 ft | Stage A precondition_error |
+| 18 | G3 有 fact_type 但不在 renderable_fact_types | 不触发 Stage A 检查 |
+| 19 | non-applicable + gold（rule 不在 applicable_rules） | Stage B-1 NOT_EVALUABLE |
+| 20 | 1 applicable PASS + 6 non-applicable | CaseStatus = **PASS** |
+| 21 | all non-applicable | CaseStatus = **NOT_EVALUABLE** |
+| 22 | silver：applicable 但缺可信答案 | Rule NOT_EVALUABLE → CaseStatus = **NOT_EVALUABLE** |
+| 23 | gold：applicable 但缺可信答案 | Stage B-2 precondition_error |
+| 24 | `frozen_round(2.675, 2)` | `2.68` |
+| 25 | `frozen_round(float('nan'), 2)` | ValueError |
+| 26 | duplicate TrustedTableSpec.table_id / source_cells / aggregate ∈ source_cells | Stage A precondition_error |
+| 27 | System duplicate table_id | Stage D FAIL（TABLE.DUPLICATE_TABLE_ID） |
+| 28 | 非法 Anchor.fact_id | Stage D FAIL（ANCHOR.INVALID_FACT_ID） |
+
+---
+
+## 15. 最终 READY 判定
+
+| 检查项 | 结论 |
+|---|---|
+| Fix 1 Unit/QuantityKind 级联唯一判定 | ✅ |
+| Fix 2 renderable_fact_types 来源独立，不依赖 required_facts | ✅ |
+| Fix 3 tokenizer overlap 排序冻结（identifier 优先）+ S-3/ST001 反例验证 | ✅ |
+| Fix 4 unknown unit 不静默退化为 None | ✅ |
+| Fix 5 ± 空格形式统一识别 | ✅ |
+| Fix 6 FactDisplaySpec 只负责 decimals，不做 unit override | ✅ |
+| Fix 7 Unit Registry 冻结 + 无自然语言兼容 | ✅ |
+| Fix 8 renderable_fact_types 完整性检查范围正确 | ✅ |
+| Fix 9 Anchor.fact_id 严格 CDM 校验 | ✅ |
+| Fix 10 ExpectedIssue matching rule-level 正式冻结 | ✅ |
+| Fix 11 Trusted/System malformed 边界区分 | ✅ |
+| Fix 12 applicable_rules case-local | ✅ |
+| Fix 13 CaseStatus 聚合语义与 05_EVAL §7 一致 | ✅ |
+| Fix 14 28 条反例均有唯一判定 | ✅ |
+| Identifier grammar 完整（Fix 1/2/3） | ✅ |
+| Tokenizer 冻结 token regex + overlap 消解 | ✅ |
+| Whitelist span containment + 不外溢 | ✅ |
+| frozen_round 冻结 + Python round() 禁止 | ✅ |
+| identity/issue_id 不可外部传入 | ✅ |
+| 7 P0 Rule 不变 | ✅ |
+| Step 7-D 不动 | ✅ |
+| known_issues 只读 | ✅ |
+| ExpectedIssue 不去重 | ✅ |
+| Validator 不执行 Criterion grammar | ✅ |
+| 不做 build gate | ✅ |
+| 不 import Step 7-F+ | ✅ |
+| 不写代码 | ✅ |
+
+---
+
+# READY
