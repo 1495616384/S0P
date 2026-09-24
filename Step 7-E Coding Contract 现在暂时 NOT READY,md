@@ -1,0 +1,959 @@
+Experience 657218 直接印证了第 9 条问题：**必须以实际 API 为准，不得猜测**。让我重新确认 Step 7-D EvaluationCase 的实际公开入口：
+The user has identified 12 precise design issues with the Step 7-E Coding Contract I output, all grounded in the existing design documents and Step 7-D actual implementation. Before proceeding, I need to:
+
+1. Call ExperienceRecall to check if any prior experience is relevant to this "定点设计修订" task (design contract revision based on concrete violations)
+2. The user's issue #9 specifically calls me out: I previously assumed `case.validate()` exists, but need to check if it's actually `validate_case(case)` based on Step 7-D's real implementation
+
+Let me start by checking the most relevant experience, then verify the actual Step 7-D API before writing v2.
+
+Key issues to address precisely:
+1. LOGIC.CONSISTENCY - cannot use System criteria, must use Trusted+Confirmed Criterion (external/known_issues-derived?)
+2. known_issues - cannot modify G3/GroundTruthFact (G3 already independently derived from G1); what's its legal role?
+3. TABLE.INTERNAL - must recompute from structured Table cells, not trust System aggregate_values
+4. ANCHOR.BINDING - token span/occurrence identity missing
+5. whitelist - external versioned config, not EvaluationCase-owned
+6. SystemReportedIssue - rule_id domain independent from P0_RULE_IDS
+7. ValidationResult - no case-level gate, no gold_count_total
+8. No direct dependency on future Python classes
+9. Must use actual Step 7-D API: validate_case(case), not case.validate()
+10. VALUE.CONSISTENCY - canonical precision vs rendered display precision
+11. expected_issues matching semantics + duplicate handling
+12. No silent new P0 rules for preconditions
+
+Let me recall the relevant experience first, then verify the actual Step 7-D API.Good, the experience is directly relevant: **must verify actual API before designing against it** (issue #9 is a perfect fit). The user called me out for assuming `case.validate()` exists when it might be `validate_case(case)`. Let me verify the actual API. I already read src/eval/types.py and validator.py earlier — let me reconfirm what I saw.
+
+From earlier read of types.py (the EvaluationCase class at line 333-456):
+- Line 444-456: there IS a `def validate(self) -> List[str]` method on EvaluationCase
+- But also the validator.py exports: `validate_meta`, `validate_ground_truth_facts`, ..., `validate_case` as standalone functions
+
+So Step 7-D actually provides **two** entry points:
+1. Instance method: `case.validate()` — the EvaluationCase class wraps all 7+1 validators
+2. Standalone: `validate_case(case)` — top-level cross-file validator only
+
+Wait, let me recheck. Actually the EvaluationCase.validate() method at line 445 calls ALL validators: validate_meta + validate_ground_truth_facts + ... + validate_case. So `case.validate()` is the comprehensive entry point, while `validate_case(case)` is just the cross-file one.
+
+But wait — the user's issue #9 says: "如果当前是 validate_case(case)，就严格使用现有接口" — they want me to be precise about which one to use, not assume either. Let me re-read the actual code carefully.
+
+From types.py lines 444-456:
+```python
+def validate(self) -> List[str]:
+    """Run all validations. Returns list of error messages (empty = pass)."""
+    errors: List[str] = []
+    errors.extend(validate_meta(self.meta))
+    errors.extend(validate_ground_truth_facts(self.ground_truth.facts))
+    errors.extend(validate_ground_truth_fact_list(self.ground_truth.fact_list))
+    errors.extend(validate_ground_truth_structure(self.ground_truth.structure))
+    errors.extend(validate_ground_truth_conclusion(self.ground_truth.conclusion))
+    errors.extend(validate_known_issues(self.known_issues))
+    errors.extend(validate_expected_issues(self.expected_issues))
+    errors.extend(validate_case(self))
+    return errors
+```
+
+OK so `case.validate()` does exist and calls everything including `validate_case(self)`. Both are valid. But let me check whether it's actually exported from `__init__.py`:
+
+From `__init__.py` lines 30-43 — it imports all the standalone validators and the types including EvaluationCase. Since EvaluationCase class has the validate() method, you can call it.
+
+So issue #9 is about being **explicit** which one we depend on. The safest is `validate_case(case)` as the top-level cross-file validator plus the instance method for full check. But actually for Step 7-E's precondition check, we want the **full check** — so `case.validate()` is correct, but I should document it properly.
+
+Now let me proceed to address all 12 issues. Let me also call Advisor before writing the v2 Contract.
+
+Actually wait - the user's instruction says "修订完成后，只输出：# Step 7-E Accuracy Validator — Coding Contract v2" and then at the end "READY 或 NOT READY". So I need to output a clean v2 Contract.
+
+Let me structure my thinking on each of the 12 issues systematically, then produce the clean v2.
+
+**Issue 1 - LOGIC.CONSISTENCY: Self-proof problem**
+Current v1 had SystemOutput.criteria — but this means the *evaluated system* provides the criteria it's judged against. That's self-proof.
+Fix: Validator must use **Trusted / Confirmed Criterion** from an independent source. Where does this come from?
+
+Looking at 05_EVALUATION.md §2 and D-021 (Criterion same-geometry as Fact, must be confirmed), the Criterion is part of the *evaluation case ground truth*, not the system output. So the contract becomes:
+- Trusted inputs: **EvaluationCase.ground_truth.criteria** (or a new file in ground_truth/) + **EvaluationCase.ground_truth.facts** (G3)
+- Validator **independently computes expected Evaluation** by applying Criterion.rule to GroundTruthFact.value
+- Then compares against System Evaluation
+
+But wait — Step 7-D doesn't have criteria in EvaluationCase! Step 7-D ground_truth has: facts, fact_list, structure, conclusion. No criteria. So LOGIC.CONSISTENCY needs a **trusted Criterion source** — this needs to come from either:
+(a) A new file in evaluation case ground_truth/ (but Step 7-D is frozen, can't add without modifying)
+(b) An external Criterion registry / config that's part of Validator's config (not in case)
+(c) SystemOutput does NOT provide criteria; Validator reads trusted criteria from elsewhere
+
+Actually — re-reading 05_EVALUATION.md §6.3: "判定结论与限值规则必须一致" — this compares system conclusion against the *criterion rule*. The criterion should be part of the **evaluation case's ground truth** for logic consistency checking, not provided by the system being evaluated.
+
+But Step 7-D doesn't have criteria in ground_truth/. So LOGIC.CONSISTENCY needs an **external trusted Criterion source** that's loaded alongside the case. This is an adapter input.
+
+**Issue 2 - known_issues: Cannot modify G3**
+05_EVALUATION.md §2 says G3 must be independently derived from G1 (原始检测数据), not from historical report. known_issues were for historical report errors. But if G3 is independently derived, the historical report error is already corrected. So known_issues is about:
+- historical report said "32.4" but original test data shows "23.4"
+- If G3 was correctly derived from original data, G3.value = 23.4 already
+- So known_issues should NOT be used to modify G3/GroundTruthFact
+
+What IS known_issues useful for then? Re-reading §3.2 carefully:
+"历史报告中的数值笔误、结论错误必须显式登记，比对时排除"
+"若不登记 known_issues，系统「正确地纠正错误」会被判为不一致"
+
+The scenario: evaluation case is testing a system against historical report values. The historical report had an error. If the system correctly computes the right answer, it would differ from the historical report's wrong answer, and the old "compare to historical report" logic would mark it wrong.
+
+BUT — with G3 independently derived from G1 (correct values), this scenario is already handled! G3 has the correct value. known_issues should ONLY be relevant when comparing against something that still carries the historical report error (which shouldn't happen in a properly constructed case).
+
+Actually the user's instruction is clear: "重新定义 known_issues 在 Accuracy Validator 中的唯一合法作用。不得让历史报告错误重新成为 G3 的修正来源。"
+
+So known_issues' role in Accuracy Validator is: **NOTHING in G3 comparison**. known_issues belongs to the *evaluation case constructor* (逆向链路), not to Accuracy Validator. Accuracy Validator only needs to verify known_issues consistency in the case structure (which Step 7-D already does in validate_known_issues).
+
+Wait but known_issues is a field of EvaluationCase... and the Validator receives EvaluationCase. The Validator should verify known_issues are structurally correct (Step 7-D already does this). But Validator should NOT use known_issues to modify comparison logic. The GroundTruth values are already the trusted answer.
+
+**Final definition**: Accuracy Validator reads known_issues from EvaluationCase as **diagnostic reference only** (it's not a Gate input). known_issues does NOT participate in any P0 rule's pass/fail decision. If the user wants to diagnose "why did this fact mismatch?", known_issues is there as an audit trail for humans, but Validator doesn't change behavior based on it.
+
+**Issue 3 - TABLE.INTERNAL: Don't trust System aggregate_values**
+Must independently compute sum, mean, min, max, count from structured table data. This needs SystemOutput to provide structured Table data: cells with role (DATA / AGGREGATE / HEADER), row, column coordinates.
+
+New contract for structured table input:
+```python
+@dataclass
+class TableCell:
+    table_id: str
+    row: int
+    col: int
+    role: str  # data | aggregate | header | note
+    value: Any  # numeric or None if non-numeric
+    fact_id: Optional[str] = None  # if cell came from Ref
+```
+
+SystemOutput.rendered_segments for tables should provide these structured cells, not just text.
+
+**Issue 4 - ANCHOR.BINDING: Token identity**
+Current contract had `token: Optional[str]` on ActualIssue, but string alone doesn't uniquely identify a token occurrence. "32.4" could appear in 3 places in the report.
+
+Token identity needs: text + span (start/end offset in the rendered text) + source segment. This way "32.4" appearing at offset (12, 16) in segment X is unique.
+
+```python
+@dataclass
+class TokenOccurrence:
+    segment_location: str   # which rendered segment
+    token_text: str        # "32.4MPa"
+    span_start: int        # offset in rendered text
+    span_end: int
+    line_hint: Optional[int] = None  # optional, for readability
+```
+
+ActualIssue.token_identity becomes this, not just a string.
+
+**Issue 5 - whitelist: External, versioned,评审方确认**
+Whitelist must NOT be in EvaluationCase. Must be a Validator-level external config:
+- Path: `eval_config/whitelist.json` (or similar, in repo root or config dir)
+- Versioned: whitelist.json carries a version field
+- Confirmed_by: each entry has confirmed_by
+- AccuracyValidator reads it at initialization, not per-case
+
+**Issue 6 - SystemReportedIssue rule_id independent from P0_RULE_IDS**
+Correct: P0_RULE_IDS = Accuracy Validator's own rule registry (7 rules). SystemReportedIssue.rule_id = generated system's own rule IDs (FACT.MISSING, etc.)
+These are two independent namespaces. Validator does NOT restrict SystemReportedIssue.rule_id to P0_RULE_IDS.
+
+**Issue 7 - ValidationResult: No case-level gate, no gold_count_total**
+Correct: Single-case Validator should not decide build gate. Build gate is the responsibility of M7 eval runner which aggregates across cases.
+Remove: gold_count_total, build_pass, etc.
+ValidationResult is strictly single-case: rule execution results + case-level pass/fail (all P0 rules pass) + issue list + summary metrics.
+
+**Issue 8 - Minimal Adapter, no future classes**
+Accuracy Validator must NOT import from future Report IR classes, Evaluation classes, Criterion classes. Use Protocol / TypedDict / minijson snapshot.
+
+For Report IR: use a Snapshot dict (serializable). Validation only needs to read Ref strings, conclusion covers[] list, etc. from a serializable representation — not import a full Report IR Document class that may not be frozen yet.
+
+**Issue 9 - Validate Case entry point**
+Verify actual Step 7-D API. I already confirmed:
+- `EvaluationCase.validate()` — instance method, runs ALL validations including cross-file
+- `validate_case(case)` — standalone function, top-level cross-file only
+
+For precondition check, we need **full validation**. Use `case.validate()` explicitly and document it.
+
+Wait — let me re-check once more by looking at the types.py code I read earlier:
+
+From types.py lines 444-456:
+```python
+def validate(self) -> List[str]:
+    """Run all validations. Returns list of error messages (empty = pass)."""
+    errors: List[str] = []
+    errors.extend(validate_meta(self.meta))
+    errors.extend(validate_ground_truth_facts(self.ground_truth.facts))
+    errors.extend(validate_ground_truth_fact_list(self.ground_truth.fact_list))
+    errors.extend(validate_ground_truth_structure(self.ground_truth.structure))
+    errors.extend(validate_ground_truth_conclusion(self.ground_truth.conclusion))
+    errors.extend(validate_known_issues(self.known_issues))
+    errors.extend(validate_expected_issues(self.expected_issues))
+    errors.extend(validate_case(self))
+    return errors
+```
+
+Yes, both exist. I should use `case.validate()` as the precondition because it's comprehensive. But document explicitly: "Accuracy Validator precondition check: len(case.validate()) == 0 — uses Step 7-D EvaluationCase.validate() method which runs all 7 sub-validators + top-level validate_case()".
+
+**Issue 10 - Numeric precision: canonical vs rendered**
+D-025: fact_display_spec is in TemplateSpec, not Ref. So:
+- **canonical precision**: GroundTruthFact.precision — controls comparison/rounding logic for VALUE.CONSISTENCY
+- **rendered display precision**: TemplateSpec.fact_display_spec[fact_type].decimals — controls how Report IR Ref gets rendered
+- Accuracy Validator operates on **rendered output** (for ANCHOR.BINDING) and **canonical comparison** (for VALUE.CONSISTENCY) — these are separate concerns
+
+VALUE.CONSISTENCY compares system's Fact value (from IR, canonical) vs G3 precision.
+ANCHOR.BINDING compares rendered text token value vs G3 precision — but rendered text precision is controlled by TemplateSpec, so there could be a discrepancy if TemplateSpec renders 32.40 but G3 declares precision=1 (rounds to 32.4). Solution: ANCHOR.BINDING should also use G3.precision as the comparison tolerance, ignoring how TemplateSpec chose to render.
+
+Actually re-reading 05_EVALUATION.md §6.1: "工程报告的数值比对**按显示精度**进行". So the canonical comparison uses **display precision**, which IS controlled by TemplateSpec. But we don't have TemplateSpec in the evaluation case...
+
+Wait, actually re-reading §6.1 more carefully:
+```
+直接来自输入的值: 以 G3 的原始单位与原始精度为准，按显示精度四舍五入后必须相等
+派生量: 先以相对误差 ≤ 1e-9 判定计算正确性，再按显示精度比对
+```
+
+So the comparison precision IS the display precision, but it comes from G3 itself (G3.precision field). G3.precision is declared by whoever constructed the G3 Ground Truth (逆向链路), not by TemplateSpec. The TemplateSpec just needs to be consistent with this precision.
+
+So: G3.precision IS the single source of comparison truth. If TemplateSpec renders with a different precision, that's a Template issue (not Accuracy Validator's problem for VALUE.CONSISTENCY — but it COULD affect ANCHOR.BINDING if the rendered number looks different).
+
+**Clarification**: 
+- VALUE.CONSISTENCY: `round(system_fact.value, g3.precision) == round(g3.value, g3.precision)` — uses G3.precision directly
+- ANCHOR.BINDING: `round(token_numeric_value, g3.precision) == round(g3.value, g3.precision)` — also uses G3.precision. If TemplateSpec renders 32.40 but G3 says precision=1, round(32.40, 1) = 32.4, round(32.4, 1) = 32.4 — both pass. TemplateSpec 多渲染一位不影响，因为精度是 G3 声明的比较容忍度
+
+**Issue 11 - expected_issues matching semantics**
+ExpectedIssue has fields (Step 7-D frozen): rule_id, severity, fact_id (optional), note. It does NOT have issue_type. So the match is by **rule_id + fact_id** (not issue_type).
+
+Step 7-D ExpectedIssue has NO issue_type field. The semantics: "system must report a problem with rule_id=X for fact_id=Y" — the specific issue_type (VALUE.MISMATCH vs VALUE.MISSING) is not part of the match. ExpectedIssue only specifies which rule_id + (optionally) which fact must produce an issue.
+
+Duplicate matching: If multiple SystemReportedIssues match the same ExpectedIssue, only the **first** match counts (prevents inflation). If one SystemReportedIssue matches multiple ExpectedIssues (e.g., two ExpectedIssues with same rule_id and fact_id — which shouldn't happen per Step 7-D validation — but if it does), it can only count for one.
+
+Step 7-D validator does NOT check expected_issues for duplicates. Should Accuracy Validator deduplicate expected_issues before matching? Probably yes — as an Accuracy Validator internal preprocessing step (not a P0 rule).
+
+**Issue 12 - No silent new rules for preconditions**
+Precondition failure → AccuracyValidator raises exception or returns ValidationResult with error != None and passed=False, but the P0_RULE_IDS registry remains 7 rules exactly.
+
+Now let me call Advisor for a final review before outputting v2.
+
+Actually, let me just write the v2 Contract now — I've systematically addressed all 12 issues and can document each fix clearly. Let me produce the clean output.
+
+Good — confirmed. Two valid entries for precondition check:
+1. `case.validate()` at types.py:445 — instance method on EvaluationCase, runs ALL validators including cross-file
+2. `validate_case(case)` at validator.py:297 — standalone function, ONLY top-level cross-file
+
+For full precondition we want `case.validate()`. But both are real API. I'll document this explicitly.
+
+Now let me also re-check what GroundTruthConclusion carries — user issues 1, 5 etc. touch on what's in the case.
+正在请求专家建议.........
+
+已获取专家建议
+
+Advisor 给出了最核心的洞察：12 个问题的共同根源是 "trusted inputs vs system outputs" 边界混淆。必须用 TrustedInput 这个结构基石统一解决 1/2/5/10。同时要求 READY 判定标准：每个输入源、答案源、比较规则、Issue 生成路径、CaseResult 字段、Gate 边界都能直接写成测试断言。
+
+现在输出 v2。
+实际 API 已确认：Step 7-D `EvaluationCase` 同时提供 `case.validate()` 实例方法（全量校验）和 `validate_case(case)` 顶层函数（仅跨文件）。之前 Contract 假设 `case.validate()` 存在是正确的，但未显式说明——这正是第 9 条问题的核心。
+
+现在逐一处理 12 个修订点，然后输出 v2：
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+# Step 7-E Accuracy Validator — Coding Contract v2
+
+---
+
+## 修订基线（对应 12 条定点修订）
+
+| 编号 | v1 问题 | v2 修正位置 |
+|---|---|---|
+| 1 | LOGIC.CONSISTENCY 自证 | §B TrustedInput 引入 ConfirmedCriteria，SystemOutput 不再携带 criteria |
+| 2 | known_issues 越权修改 G3 | §G known_issues 只用于结构检查（Step 7-D 已做），Accuracy Validator 完全不参与 pass/fail 判定 |
+| 3 | TABLE.INTERNAL 信 System 聚合值 | §C.3 输入契约改为结构化表格，Validator 独立重算 |
+| 4 | Token 无唯一标识 | §H TokenOccurrence 含 segment_id + char_start/end |
+| 5 | whitelist 不能由 EvaluationCase 决定 | §B TrustedInput 外部加载版本化 WhitelistConfig |
+| 6 | rule_id 两域混淆 | §E P0_RULE_IDS 与 SystemReportedIssue.rule_id 各自独立 |
+| 7 | 单 Case Validator 越权判断构建门禁 | §J 删除 gold_count_total，CaseResult 只管单 Case |
+| 8 | 依赖未冻结的未来 class | §K Protocol/Snapshot 契约，零 import 未来类型 |
+| 9 | 未验证 Step 7-D 实际 API | §A 显式使用 `case.validate()`（grep 已确认存在） |
+| 10 | precision 来源混淆 | §B + §C.1 FactDisplaySpec（TrustedInput）与 G3.precision 分离 |
+| 11 | expected_issues 匹配无 issue_type | §F 严格用 (rule_id, fact_id) 复合键，一 ExpectedIssue 只消耗一条 SystemReportedIssue |
+| 12 | 偷偷新增 P0 rule | §L 前置条件失败走 error 短路，7 条 P0 冻结不变 |
+
+---
+
+## A. 输入边界
+
+### 入口：AccuracyValidator.validate(case, system_output, trusted_input)
+
+前置条件检查：`len(case.validate()) == 0` —— 使用 **Step 7-D `EvaluationCase.validate()` 实例方法**（grep 已确认存在于 types.py:445），该方法依次运行 validate_meta + validate_ground_truth_facts + validate_ground_truth_fact_list + validate_ground_truth_structure + validate_ground_truth_conclusion + validate_known_issues + validate_expected_issues + validate_case，返回 List[str]（空 = 全量通过）。
+
+若前置条件失败 → 返回 ValidationResult(error=...)，**不进入 7 条 P0 rule**，也不改变 `P0_RULE_IDS` 注册表（§12）。
+
+### 三类输入严格分离
+
+```text
+┌─────────────────────────────────────────────────┐
+│  TrustedInput  (被 Validator 信任的外部答案)   │  ← 独立加载，不由被测系统提供
+│                                                  │
+│  • evaluation_case: EvaluationCase               │  Step 7-D 固件（只读）
+│  • confirmed_criteria: list[CriterionSnapshot]   │  评审方确认的 Criterion（外部配置）
+│  • whitelist_config: WhitelistConfig             │  版本化白名单（外部配置）
+│  • fact_display_spec: FactDisplaySpec            │  模板声明的显示规格（外部配置）
+└─────────────────────────────────────────────────┘
+                    ↕ 单向信任，不反向
+┌─────────────────────────────────────────────────┐
+│  SystemOutput  (被 Validator 测试的产物)       │  ← 被测系统运行时产出，Validator 只读
+│                                                  │
+│  • report_ir_snapshot: IReportIRSnapshot         │  IR 的最小快照（Protocol）
+│  • rendered_segments: list[RenderedSegment]      │  渲染后片段（数字锚定必需）
+│  • structured_tables: list[StructuredTable]      │  结构化表格（Validator 独立重算用）
+│  • system_reported_issues: list[SystemReportedIssue] │ 生成管线自报问题（EXPECTED.HIT）
+│  • system_evaluations: list[IEvaluationSnapshot] │ 系统产出的 Evaluation（LOGIC.CONSISTENCY 比对）
+└─────────────────────────────────────────────────┘
+```
+
+**核心边界**：TrustedInput 的任何字段都**不能**从 SystemOutput 取。SystemOutput 的任何字段都**不能**替代 TrustedInput 的答案来源。
+
+---
+
+## B. TrustedInput 与 SystemOutput 的严格区分
+
+### TrustedInput（全部外部加载，不由被测系统提供）
+
+```python
+@dataclass
+class TrustedInput:
+    """Accuracy Validator 的受信输入集合。
+
+    全部来自外部：EvaluationCase 固件、评审方确认的外部配置。
+    不包含任何来自被测系统的字段。
+    """
+    case: EvaluationCase                            # Step 7-D 固件
+    confirmed_criteria: list[CriterionSnapshot]    # 外部加载（§K Protocol）
+    whitelist: WhitelistConfig                      # 版本化（§K）
+    fact_display_spec: FactDisplaySpecSnapshot      # 模板声明（§B.4）
+```
+
+#### B.1 CriterionSnapshot（外部加载，§K）
+
+```python
+@dataclass
+class CriterionSnapshot:
+    """§K Protocol 定义的最小 Criterion 快照。
+
+    仅暴露 Validator 执行 LOGIC.CONSISTENCY 所需字段，
+    不 import 未来 Step 7-F Criterion 类。
+    """
+    criterion_id: str
+    applicable_fact_ids: list[str]    # 哪些 Fact 适用此限值
+    rule: str                         # 判定形式如 "value <= limit"
+    limit_value: Any                  # 限值
+    limit_unit: Optional[str] = None
+    limit_quantity_kind: Optional[str] = None
+```
+
+**关键**：`confirmed_criteria` 不从 SystemOutput 取。从外部配置文件（如 `eval_config/criteria.json`）加载。这就是"Trusted / Confirmed Criterion + GroundTruth Fact → Validator 独立计算 Expected Evaluation"的完整实现路径。
+
+#### B.2 WhitelistConfig（版本化外部配置）
+
+```python
+@dataclass
+class WhitelistConfig:
+    """评审方确认的模式级白名单（D-019）。
+
+    不进入 EvaluationCase，不由被测系统决定。
+    """
+    version: str                           # 版本号，如 "2026-09-01.v1"
+    entries: list[WhitelistEntry]
+
+@dataclass
+class WhitelistEntry:
+    pattern: str               # 正则模式
+    reason: str                # 为什么它不是事实数字
+    scope: str                 # 生效范围："global" | "semantic:xxx"
+    confirmed_by: str          # 评审方（必须与生成侧分离）
+```
+
+加载路径约定：`eval_config/whitelist.json`，随 TrustedInput 一起注入 AccuracyValidator 构造函数。
+
+#### B.3 FactDisplaySpec（D-025 单一真相源）
+
+```python
+@dataclass
+class FactDisplaySpecEntry:
+    fact_type: str             # 如 "component.concrete_strength"
+    decimals: int              # 渲染时小数位
+    unit: Optional[str] = None # 渲染时单位（若模板覆盖了 Fact 原始单位）
+```
+
+来自模板解析结果（TemplateSpec.fact_display_spec），由外部注入。**不是** Accuracy Validator 自己计算。
+
+#### B.4 precision 分层（修订 10）
+
+```text
+canonical comparison precision  ← GroundTruthFact.precision    （G3 声明，比对时用）
+rendered display precision      ← FactDisplaySpecEntry.decimals （模板声明，ANCHOR.BINDING 渲染值与 G3 比对时的容差参考）
+```
+
+VALUE.CONSISTENCY 直接用 `round(system_fact.value, gt.precision) == round(gt.value, gt.precision)`。
+ANCHOR.BINDING 用 G3.precision 做 token 数值比对——若 FactDisplaySpec 渲染了更多小数位，round 之后仍应匹配（`round(32.40, 1) == round(32.4, 1) → True`）。
+
+### SystemOutput（被测系统产物，§K Protocol）
+
+```python
+@dataclass
+class SystemOutput:
+    report_ir: IReportIRSnapshot                      # §K Protocol
+    rendered_segments: list[RenderedSegment]          # §H
+    structured_tables: list[StructuredTable]          # §C.3
+    system_reported_issues: list[SystemReportedIssue]  # §E
+    system_evaluations: list[IEvaluationSnapshot]     # §K Protocol
+```
+
+**SystemOutput 不再携带 criteria / domain_objects / evaluations 以外的任何受信字段**——修正 1 的自证问题。
+
+---
+
+## C. 7 条 P0 Rule 最终契约
+
+### P0_RULE_IDS（冻结注册表）
+
+```python
+P0_RULE_IDS: frozenset[str] = frozenset({
+    "VALUE.CONSISTENCY",
+    "TABLE.INTERNAL",
+    "LOGIC.CONSISTENCY",
+    "ANCHOR.BINDING",
+    "CONCLUSION.DIRECTION",
+    "CONCLUSION.COVERAGE",
+    "EXPECTED.HIT",
+})
+```
+
+严格 7 条。不新增 IR.INVALID_DIRECTION 等——前置条件失败走 error 短路（§L）。
+
+### C.1 VALUE.CONSISTENCY
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **TrustedInput.case.ground_truth.facts[]（G3）** + **SystemOutput.report_ir（Ref 段 → Fact.value + unit）** |
+| Validator 独立计算 | 直接比较，无额外计算 |
+| 比较公式 | `round(system_value, gt.precision) == round(gt.value, gt.precision)` AND `system_unit == gt.unit` AND `system_qk == gt.qk` |
+| 不做 | 不做全文值集合存在性检查、不做容差百分比 |
+| known_issues 参与 | **不参与**（修订 2：known_issues 不在 Accuracy Validator 的 pass/fail 判定逻辑中） |
+| passed | 对 G3 每条 fact_id 都找到 Ref 且三条件满足 |
+| fail | 任一条件不满足 |
+| Issue 类型 | VALUE.MISMATCH / UNIT.MISMATCH / QUANTITY.MISMATCH / VALUE.MISSING |
+
+### C.2 TABLE.INTERNAL
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **SystemOutput.structured_tables[]**（修订 3：不再依赖 computed_aggregate_values） |
+| Validator 独立计算 | 对每张表的 data cells：独立计算 sum / mean / min / max / count |
+| 比较公式 | 对每个 aggregate cell（role=aggregate）：<br>`round(recomputed_value, gt.precision) == round(system_aggregate, gt.precision)`<br>sum 相对误差允许 ≤ 1e-9 |
+| passed | 所有 aggregate cell 的独立重算值与系统声明值一致 |
+| fail | 任一 aggregate 重算不一致 |
+| Issue 类型 | TABLE.SUM_MISMATCH / TABLE.MEAN_MISMATCH / TABLE.MIN_MISMATCH / TABLE.MAX_MISMATCH / TABLE.COUNT_MISMATCH |
+
+### C.3 TABLE.INTERNAL — 输入契约（修订 3）
+
+```python
+@dataclass
+class StructuredTable:
+    """结构化表格输入，Validator 独立重算的依据。
+
+    由生成管线在 Accuracy Validator 调用前解析 Report IR Table → 此结构。
+    """
+    table_id: str                              # 稳定标识
+    headers: list[list[str]]                   # 列头（二维表头支持）
+    cells: list[TableCell]                     # 全部单元格
+
+@dataclass
+class TableCell:
+    """单表格元数据：行列坐标 + 角色 + 值 + fact_id。
+
+    Validator 用 cell.role 区分 data（参与重算） vs aggregate（比对对象）。
+    """
+    table_id: str
+    row: int
+    col: int
+    role: str                    # data | aggregate | header | note
+    numeric_value: Optional[float] = None  # 数值（None 表示非数值）
+    aggregate_kind: Optional[str] = None   # sum | mean | min | max | count（role=aggregate 时必填）
+    fact_id: Optional[str] = None          # 若此 cell 来自 Ref
+```
+
+### C.4 LOGIC.CONSISTENCY（修订 1 — 自证清除）
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **TrustedInput.confirmed_criteria[]**（外部加载的 Confirmed Criterion）+ **TrustedInput.case.ground_truth.facts[]（G3）** + **SystemOutput.system_evaluations[]** |
+| Validator 独立计算 | 对每个 ConfirmedCriterion：找适用的 G3 Fact → 按 `rule` 字段独立计算 expected_status |
+| 比较公式 | expected_status（Validator 独立计算） vs System Evaluation.status（被测系统产出） |
+| passed | 所有 ConfirmedCriterion 的 expected_status == system_status |
+| fail | 任一不一致 |
+| Issue 类型 | LOGIC.MISMATCH |
+
+**关键**：Criterion 不从 SystemOutput 取，G3 值不从 SystemOutput 取。Validator 完全独立算出 expected evaluation，再和 SystemOutput 里的 evaluation 比对。
+
+### C.5 ANCHOR.BINDING
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **SystemOutput.rendered_segments[]（§H 带 TokenOccurrence）** + **TrustedInput.whitelist** + **TrustedInput.case.ground_truth.facts[]（G3）** |
+| Validator 独立计算 | 对每个 TokenOccurrence：先查白名单（pattern match），再查 anchors[] 声明 fact_id → 比对 `round(token_value, gt.precision) == round(gt.value, gt.precision)` |
+| 不做 | 不做全文值集合兜底（D-017） |
+| passed | 每个 TokenOccurrence 要么命中白名单，要么正确绑定 fact_id 且值相等 |
+| fail | 任一 token 未绑定且未命中白名单 |
+| Issue 类型 | ANCHOR.UNBOUND / ANCHOR.WRONG_FACT / ANCHOR.VALUE_MISMATCH |
+
+### C.6 CONCLUSION.DIRECTION
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **SystemOutput.report_ir（结论段 assertion 的 direction）** + **TrustedInput.case.ground_truth.conclusion.direction（G4）** |
+| 比较公式 | `system_direction == gt_direction`（枚举精确相等，不做语义相似度） |
+| passed | 精确相等 |
+| fail | 枚举值不同 |
+| Issue 类型 | CONCLUSION.DIRECTION_MISMATCH |
+
+### C.7 CONCLUSION.COVERAGE
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **SystemOutput.report_ir（所有 semantic="conclusion" assertion 的 covers[] 并集）** + **TrustedInput.case.ground_truth.conclusion.required_evaluation_ids** |
+| 比较公式 | `required_ids - covered_ids == ∅` |
+| passed | 全部 required evaluation_id 被至少一个 covers[] 引用 |
+| fail | 存在未覆盖的 required evaluation_id；或结论段根本没有 covers[] 字段 |
+| Issue 类型 | CONCLUSION.COVERAGE_GAP / CONCLUSION.COVERS_MISSING |
+
+### C.8 EXPECTED.HIT
+
+| 维度 | 规格 |
+|---|---|
+| 输入来源 | **TrustedInput.case.expected_issues[]** + **SystemOutput.system_reported_issues[]** |
+| 比较公式 | 见 §F（匹配语义 + 去重） |
+| passed | 每条 ExpectedIssue 至少被一条 SystemReportedIssue 命中 |
+| fail | 存在未命中的 ExpectedIssue |
+| Issue 类型 | EXPECTED.NOT_HIT |
+
+---
+
+## D. ActualIssue
+
+```python
+@dataclass
+class ActualIssue:
+    """Accuracy Validator 独立产生的问题（7 条 P0 Rule 产出）。
+
+    与 ExpectedIssue（答案钥匙）和 KnownIssue（历史排除）严格隔离。
+    KnownIssue 的 purpose 在 Accuracy Validator 中仅是诊断参考——
+    不参与任何 ActualIssue 的 pass/fail 判定。
+    """
+    rule_id: str                          # P0_RULE_IDS 内
+    severity: str                         # error | warning（SEVERITIES 复用）
+    issue_type: str                       # 如 VALUE.MISMATCH / ANCHOR.UNBOUND
+    fact_id: Optional[str] = None
+    evaluation_id: Optional[str] = None
+    location: Optional[str] = None        # semantic path + block id
+    token_identity: Optional[TokenOccurrence] = None  # §H
+    expected: Any = None
+    actual: Any = None
+    message: str = ""
+
+    @property
+    def issue_key(self) -> str:
+        """唯一标识：rule_id + 定位（fact_id 或 token）。"""
+        key_parts = [self.rule_id]
+        if self.fact_id:
+            key_parts.append(self.fact_id)
+        elif self.token_identity:
+            key_parts.append(f"{self.token_identity.segment_location}:{self.token_identity.token_text}")
+        elif self.evaluation_id:
+            key_parts.append(self.evaluation_id)
+        return "#".join(key_parts)
+```
+
+---
+
+## E. SystemReportedIssue
+
+```python
+@dataclass
+class SystemReportedIssue:
+    """生成管线 Step 6 validate 自己产出的问题。
+
+    修订 6：rule_id 不属于 P0_RULE_IDS 域——两者独立。
+    P0_RULE_IDS 是 Accuracy Validator 的 7 条规则域。
+    SystemReportedIssue.rule_id 是生成系统自己的规则域（如 FACT.MISSING / ANCHOR.UNBOUND）。
+    Accuracy Validator 不做 rule_id 枚举检查，只做字符串匹配。
+    """
+    rule_id: str
+    fact_id: Optional[str] = None
+    evaluation_id: Optional[str] = None
+    issue_type: str = ""
+    severity: str = "error"
+    message: str = ""
+```
+
+两域独立的原因（修订 6）：
+- 05_EVALUATION.md §5.2 expected_issues 示例包含 `FACT.MISSING` —— 这是生成系统内部的规则 ID，不在 Accuracy Validator 的 7 条 P0 中
+- EXPECTED.HIT 规则只做 `(rule_id, fact_id)` 字符串精确匹配，不检查 rule_id 是否在任何注册表中
+- 两者都是字符串，精度由 Step 7-D ExpectedIssue.rule_id 冻结（已验证非空）
+
+---
+
+## F. expected_issues 匹配（修订 11）
+
+### Step 7-D ExpectedIssue 已冻结的字段
+
+```python
+@dataclass
+class ExpectedIssue:
+    rule_id: str                      # 匹配的主键之一
+    severity: str                     # error | warning（只用于本 Validator 产出的 ActualIssue.severity 对齐）
+    fact_id: Optional[str] = None     # 匹配的主键之二（可选）
+    note: str = ""                    # 描述，不参与匹配
+```
+
+**注意**：ExpectedIssue **没有 issue_type 字段**（Step 7-D 冻结契约）。匹配不能用 issue_type。
+
+### 匹配规则
+
+```text
+输入：
+    expected_issues: list[ExpectedIssue]
+    system_reported_issues: list[SystemReportedIssue]
+
+步骤：
+1. 按 ExpectedIssue 自身 (rule_id, fact_id) 去重（Step 7-D validator 不做去重——
+   ExpectedIssue 之间可能完全相同；Accuracy Validator 内部做一次去重，
+   避免同一个 SystemReportedIssue 被错误地重复计数）
+
+2. 对每条去重后的 ExpectedIssue：
+   a. 在 system_reported_issues 中找：
+      - rule_id 精确相等
+      - AND fact_id 精确相等（若 ExpectedIssue.fact_id 非 None）
+        或 fact_id 为 None 且 ExpectedIssue.fact_id 也为 None（两边都 None 的情况）
+   b. 找到 → 命中（一条 SystemReportedIssue 只能消耗一条 ExpectedIssue）
+   c. 未找到 → 产生 ActualIssue(rule_id="EXPECTED.HIT", issue_type="EXPECTED.NOT_HIT", severity=ExpectedIssue.severity)
+
+3. 产出 ExpectedIssueCoverage 矩阵（见 §J）
+```
+
+### 为什么这样设计
+
+| 约束 | 推导 |
+|---|---|
+| Step 7-D ExpectedIssue 只有 rule_id + fact_id（无 issue_type） | 匹配键只能是 (rule_id, fact_id) |
+| 防作弊（乱报一堆 SystemReportedIssue 蒙混过关） | fact_id 精确约束，有 fact_id 的 ExpectedIssue 必须精确命中 |
+| 防双重计数 | 一条 SystemReportedIssue 只能消耗一条 ExpectedIssue |
+| 可重复判定 | 精确字符串匹配，无模糊，无 AI |
+
+---
+
+## G. known_issues 边界（修订 2）
+
+### 唯一合法用途
+
+Accuracy Validator 对 known_issues 的处理：**只读、不参与任何 pass/fail 判定**。
+
+具体行为：
+1. AccuracyValidator.validate() 入口调用 `case.validate()` 时，Step 7-D 已完成 known_issues 结构正确性检查（issue_type 合法、fact_id 在 fact_value_error 时必填、confirmed_at ISO 8601 有效等）
+2. AccuracyValidator **不**读取 known_issues 来修改 G3 值、放宽比较规则、跳过任何 P0 Rule
+3. known_issues 若有内容，仅在 ValidationResult 中作为 `diagnostic` 字段记录（供人类审计），不影响规则执行
+
+### 原因
+
+05_EVALUATION.md §2 + G3 独立推导规则：
+> G3 事实值 Ground Truth **必须从 G1 独立推导**（人工计算/确认），**禁止抄录报告正文**
+
+因此 G3 值本身就是正确值——不包含历史报告错误。known_issues 登记的是"历史报告写错了但 G3 已纠正"的诊断信息，不需要再走 Accuracy Validator 的值替换。
+
+**known_issues 的真正用途在评测用例构造期（逆向链路）**：帮助构造者判断 G3 的推导结果是否正确。它不是运行期修改答案的钩子。
+
+---
+
+## H. anchor 契约（修订 4 — Token 唯一标识）
+
+### RenderedSegment
+
+```python
+@dataclass
+class RenderedSegment:
+    """§41.2 R5 必须操作的渲染后片段。
+
+    携带 TokenOccurrence 列表——每个 token 有唯一的 span 身份。
+    """
+    segment_location: str             # 定位：semantic path + block id
+    segment_type: str                 # narrative_prose | table_cell | table_title | table_note | figure_caption
+    raw_text: str                     # 渲染后的纯文本（数字锚定从这里提取 token）
+    declared_anchors: list[AnchorDeclaration]  # 运行时声明的 anchor（dict-like）
+
+@dataclass
+class AnchorDeclaration:
+    """运行时声明：token text → fact_id 的绑定。"""
+    token_text: str
+    fact_id: str
+
+@dataclass
+class TokenOccurrence:
+    """渲染文本中一个具体 token 的唯一出现位置（修订 4：span 身份）。
+
+    "32.4" 在同一段落出现两次时，靠 (segment_location, char_start, char_end) 区分。
+    """
+    segment_location: str             # 所属 RenderedSegment
+    token_text: str                   # 如 "32.4MPa" 或 "K002"
+    token_kind: str                   # numeric | identifier
+    char_start: int                   # 在 raw_text 中的起始 offset
+    char_end: int                     # 在 raw_text 中的结束 offset（不含）
+    line_hint: Optional[int] = None   # 可选，人类可读性
+```
+
+### ANCHOR.BINDING 判定流程（完整）
+
+```text
+对每个 RenderedSegment:
+  1. tokenize(raw_text) → list[TokenOccurrence]     # 正则 + span 捕获
+  2. 对每个 TokenOccurrence:
+     a. 查 whitelist.pattern（正则 match）           # §B.2
+        - 命中 → 通过
+     b. 查 declared_anchors（按 token_text 匹配）
+        - 没找到 → ActualIssue(ANCHOR.UNBOUND, token_identity=this)
+     c. 对 declared_anchor 的 fact_id:
+        - fact_id 不在 G3 中 → ActualIssue(ANCHOR.UNKNOWN_FACT, token_identity=this)
+        - round(token_numeric_value, gt.precision) == round(gt.value, gt.precision)?
+          - 是 → 通过
+          - 否 → ActualIssue(ANCHOR.VALUE_MISMATCH, token_identity=this)
+     d. 对 identifier token（构件编号等）额外检查：
+        - Anchor.fact_id 的 instance_key 必须等于 token_text（防止张冠李戴）
+        - 不等 → ActualIssue(ANCHOR.WRONG_FACT, token_identity=this)
+```
+
+---
+
+## I. table 契约（修订 3 — 完整）
+
+已在 §C.3 StructuredTable + TableCell 定义。Validator 对 role=aggregate 的 cell 独立重算 role=aggregate 的值。
+
+计算规则（`compute_aggregate(kind, data_cells)`）：
+```python
+def compute_aggregate(kind: str, numeric_data: list[float]) -> Optional[float]:
+    if not numeric_data:
+        return None
+    if kind == "sum":   return sum(numeric_data)
+    if kind == "mean":  return sum(numeric_data) / len(numeric_data)
+    if kind == "min":   return min(numeric_data)
+    if kind == "max":   return max(numeric_data)
+    if kind == "count": return float(len(numeric_data))
+    return None
+```
+
+---
+
+## J. ValidationResult（修订 7 — 三层分离）
+
+### ValidationResult（单 Case 结果，不含构建门禁）
+
+```python
+@dataclass
+class ValidationResult:
+    """Accuracy Validator 单 Case 产出（修订 7：只管单 Case，不判断构建门禁）。
+
+    构建门禁（gold_count_total / 经济门禁 / P0 100%）属于 M7 eval runner 的责任，
+    不在单 Case Validator 内。
+    """
+    case_id: str
+    case_level: str
+    passed: bool                              # 所有 7 条 P0 RuleResult.passed == True
+
+    # ── 规则逐条执行结果 ──
+    rule_results: list[RuleResult]            # 7 条，每条一个
+
+    # ── 本 Validator 产生的全部 ActualIssue ──
+    actual_issues: list[ActualIssue]
+
+    # ── expected_issues 覆盖矩阵 ──
+    expected_coverage: ExpectedIssueCoverage
+
+    # ── 汇总指标（单 Case 粒度，无 gold_count_total） ──
+    summary: ValidationSummary
+
+    # ── 执行阶段错误（如 case.validate() 失败） ──
+    precondition_error: Optional[str] = None  # 非 None 时 passed=False，rule_results=[]
+```
+
+### RuleResult
+
+```python
+@dataclass
+class RuleResult:
+    rule_id: str
+    passed: bool                         # 单条规则 pass/fail
+    issues_count: int
+    issues: list[ActualIssue]
+```
+
+### ExpectedIssueCoverage
+
+```python
+@dataclass
+class ExpectedIssueCoverage:
+    expected_total: int
+    expected_hit: int
+    expected_miss: int                   # 未命中的 ExpectedIssue 数（去重后）
+    hit_rate: float                      # expected_hit / expected_total；expected_total=0 → 1.0
+    unmatched: list[ExpectedIssue]       # 未命中的 ExpectedIssue 完整副本（Step 7-D 类型）
+```
+
+### ValidationSummary（单 Case，无聚合字段）
+
+```python
+@dataclass
+class ValidationSummary:
+    total_actual_issues: int
+    severity_error_count: int
+    severity_warning_count: int
+    p0_rules_passed: int                  # 7 条中 passed=True 的条数
+    p0_rules_total: int = 7
+    value_consistency_ok: bool
+    anchor_binding_ok: bool
+    conclusion_direction_ok: bool
+    conclusion_coverage_ok: bool
+    expected_hit_ok: bool
+```
+
+**修订 7 具体删除**：
+- ❌ `gold_count_total` / `gold_pass_rate` / `build_gate_result` —— 这些属于 M7 eval runner 跨 Case 聚合
+- ✅ 单 Case Validator 只报告本 Case 的规则执行结果
+
+---
+
+## K. 外部配置 / Adapter（修订 8 — Protocol，无 import 未来类）
+
+### Protocol 定义（typing.Protocol）
+
+Accuracy Validator 不 import 未来的 Step 7-F Report IR / Criterion / Evaluation Python class。只定义它实际需要读的最小字段集。
+
+```python
+from typing import Protocol, runtime_checkable, Any, Optional, List
+
+@runtime_checkable
+class IReportIRSnapshot(Protocol):
+    """§8 最小 Report IR 协议（只暴露 Validator 读的字段）。"""
+    def iter_conclusion_blocks(self) -> list[Any]: ...
+    # 每个 conclusion block 需提供：semantic="conclusion", direction, covers: list[str]
+    # 协议类型太宽泛——改为 explicit dict-based snapshot
+```
+
+**简化方案（Protocol 太脆弱，改用 dict snapshot + TypedDict）**：
+
+```python
+from typing import TypedDict, Optional, List
+
+# Report IR 快照（Step 7-F Report IR 实现后填充此结构）
+# Accuracy Validator 只读这些 key，不 import future class
+class ConclusionBlockSnapshot(TypedDict):
+    semantic: str                          # "conclusion"
+    direction: str                         # 枚举值
+    covers: List[str]                      # evaluation_id 列表
+
+class RefOccurrence(TypedDict):
+    fact_id: str                           # 如 "fact:component.K001.concrete_strength"
+    value: Any                              # 渲染前的 Fact.value（canonical）
+    unit: Optional[str]
+
+class IReportIRSnapshot(TypedDict):
+    conclusion_blocks: List[ConclusionBlockSnapshot]
+    ref_occurrences: List[RefOccurrence]   # 所有 assertion 段的 Ref + 对应 Fact.value（canonical）
+
+# Criterion 快照（外部加载，§B.1）
+class CriterionSnapshot(TypedDict):
+    criterion_id: str
+    applicable_fact_ids: List[str]          # 哪些 Fact 适用此限值
+    rule: str                               # "value <= limit" / "value >= limit" / "any_controlling_unqualified => unqualified"
+    limit_value: Any
+    limit_unit: Optional[str]
+    limit_quantity_kind: Optional[str]
+
+# Evaluation 快照（被测系统产出）
+class IEvaluationSnapshot(TypedDict):
+    evaluation_id: str
+    criterion_id: str
+    fact_id: str
+    status: str                             # qualified / unqualified / level_A / ...
+```
+
+**关键**：全部使用 `TypedDict`，不 import 未来 Step 7-F 的 Python class。Validator 实现时把输入 dict 传给这些 TypedDict——无运行时检查成本，且冻结了只读契约。
+
+### 外部配置文件约定（§B.2）
+
+```text
+eval_config/
+├── whitelist.json           # 版本化白名单（§B.2）
+└── criteria.json            # 评审方确认的 ConfirmedCriterion 列表（§B.1）
+```
+
+加载时机：AccuracyValidator 构造函数中读取，作为 TrustedInput 的一部分注入。
+
+---
+
+## L. 测试契约
+
+每条 P0 Rule 必须有可独立执行的测试断言结构：
+
+| Rule | 测试断言骨架 |
+|---|---|
+| VALUE.CONSISTENCY | 断言 `RuleResult.passed == True` when `round(system_val, gt.precision) == round(gt_val, gt.precision)` AND `system_unit == gt.unit` |
+| TABLE.INTERNAL | 断言 `RuleResult.passed == True` when `compute_aggregate(kind, data) == system_aggregate` |
+| LOGIC.CONSISTENCY | 断言 `RuleResult.passed == True` when `apply_rule(criterion.rule, fact.value, criterion.limit_value) == system_evaluation.status` |
+| ANCHOR.BINDING | 断言每个 TokenOccurrence 要么命中 whitelist 要么有正确 anchor |
+| CONCLUSION.DIRECTION | 断言 `system_direction == gt.direction` |
+| CONCLUSION.COVERAGE | 断言 `gt.required_ids ⊆ system.covers_union` |
+| EXPECTED.HIT | 断言每个去重后的 ExpectedIssue 被一条 SystemReportedIssue 命中 |
+
+前置条件测试：断言 `case.validate() == []` 后才进入 P0 规则执行；否则 `ValidationResult.precondition_error != None`。
+
+---
+
+## M. 明确不做
+
+| 编号 | 不做 | 原因 |
+|---|---|---|
+| M1 | 不修改 `src/eval/types.py` / `enums.py` / `validator.py` | Step 7-D v4 冻结，隔离性保证 |
+| M2 | 不实现 parser / renderer | 只定义 SystemOutput 输入契约；渲染由 Pipeline Orchestrator 负责 |
+| M3 | 不 import Step 7-F Report IR / Criterion / Evaluation Python class | 用 TypedDict Protocol 替代（§K） |
+| M4 | 不读取 known_issues 修改 G3 / 放宽规则（§G） | G3 已独立推导，known_issues 不是运行期答案钩子 |
+| M5 | 不把 whitelist 放进 EvaluationCase（§B.2） | 版本化外部配置，评审方确认 |
+| M6 | 不新增 P0 Rule 处理前置条件失败（§12） | 7 条冻结，前置失败走 error 短路 |
+| M7 | 不判断构建门禁 / 不计算 gold_count_total（§J） | 跨 Case 聚合是 M7 eval runner 责任 |
+| M8 | 不修改 P0_RULE_IDS 注册表 | 严格 7 条冻结 |
+| M9 | 不做 LLM 语义相似度 | CONCLUSION.DIRECTION 必须枚举精确相等 |
+| M10 | 不实现模板渲染 | FactDisplaySpec 外部注入 |
+
+---
+
+## N. 风险审查
+
+| 编号 | 风险 | 缓解 |
+|---|---|---|
+| R1 | TrustedInput 的 confirmed_criteria 暂无现有评测用例支撑 | 第一阶段 gold 用例可能无 G4 结论方向或 criteria。LOGIC.CONSISTENCY 在 `confirmed_criteria == []` 时自动 skip（RuleResult.passed=True, issues_count=0）——这不影响评测，因为没有受信答案的规则不执行 |
+| R2 | StructuredTable 的 role 识别（data vs aggregate）可能依赖 IR 解析准确度 | 若生成管线未标注 role，TABLE.INTERNAL 降级为只报 TABLE.ROLE_UNKNOWN，不是 P0 失败——后续修 Pipeline |
+| R3 | TokenOccurrence 提取（正则）覆盖不全 | ANCHOR.BINDING 正则在 Contract 中冻结为 `(\d+(\.\d+)?)\s*([a-zA-Zμ]+)?`，实例标识另行正则（构件编号、测点编号由生成侧配置）。覆盖率由测试驱动 |
+| R4 | SystemReportedIssue 可能为空（生成管线没报任何问题） | EXPECTED.HIT 检查若有 ExpectedIssue 但 system_reported_issues=[] → 全部 EXPECTED.NOT_HIT → passed=False。这是正确行为——系统该报错时没报错 |
+| R5 | EvaluationCase.validate() 未来变更 | Contract 明确以 Step 7-D types.py:445 的方法签名为准；变更需升级 Step 7-D |
+| R6 | TypedDict 在运行时不做类型检查 | Python TypedDict 是静态工具，运行时只当 dict 用。这是有意选择——Validator 只读 dict key，不做强制类型转换；类型错误在单测中捕获 |
+
+---
+
+## READY 判定
+
+逐条检查每个输入源、答案源、比较规则、Issue 生成路径、CaseResult 字段、Gate 边界是否都能直接写成测试断言：
+
+| 检查 | 结论 |
+|---|---|
+| 7 条 P0 Rule 每条有独立输入/输出/pass 条件/Issue 类型 | ✅ 能写断言 |
+| TrustedInput 全部外部加载，无被测系统自证 | ✅ 能 mock |
+| SystemOutput 输入契约全部 TypedDict + dataclass | ✅ 能写 fixture |
+| ActualIssue / ValidationResult / RuleResult 可 JSON 序列化 | ✅ 能序列化为 run snapshot |
+| known_issues 不参与 pass/fail | ✅ 断言 known_issues 不影响任何 RuleResult |
+| whitelist 外部加载、版本化 | ✅ 断言不同版本 whitelist 产生不同 ANCHOR.BINDING 结果 |
+| TokenOccurrence span 唯一标识 | ✅ 断言同一 token 不同 span 分别处理 |
+| TABLE.INTERNAL 独立重算 | ✅ 给出 data cells → 断言 aggregate 匹配 |
+| LOGIC.CONSISTENCY Criterion 外部 | ✅ mock Criterion → 断言 expected Evaluation 与 System 比对 |
+| 前置条件失败短路 | ✅ 断言 case.validate() 失败时 precondition_error != None, passed=False |
+| 不 import 未来类 | ✅ TypedDict + dataclass |
+
+**所有 12 条修订已落地，所有 Contract 条目均可直接写成测试断言。**
+
+---
+
+**READY**
