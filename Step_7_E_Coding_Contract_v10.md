@@ -26,6 +26,7 @@
 > | R13 | B1 修复：unit lexer 完整 token 边界（unit-start / unit-cont 文法 + 3 组新反例 + U-5） | §5.1 / §5.4 |
 > | R14 | B2 修复：frozen_round 异常行为与契约一致（补齐检查，数学语义零改动） | §12 |
 > | R15 | B3 修复：ActualIssue build-only 守卫（__post_init__ + object.__new__ build） | §11 |
+> | R16 | 旧契约遗漏恢复：applicable_rules ⊆ P0_RULE_IDS（A-11；未知 Rule → precondition_error） | §2.1 / §2.2 / §13 / §0 |
 
 ---
 
@@ -57,6 +58,7 @@
 | INV-20 | applicable_rules 唯一来源 = trusted_input.applicable_rules；Stage B 只读 membership test | 冻结恢复 R5 |
 | INV-21 | renderable_fact_types = allowed-to-render（trusted 侧）；actual-rendered 不进入 TrustedInput | 冻结恢复 R9 |
 | INV-22 | Anchor 标识比较 = normalized_identifier == parse_fact_id(anchor.fact_id).instance_key；禁止 scope_class 推断 | 冻结恢复 R8 |
+| INV-23 | trusted_input.applicable_rules ⊆ P0_RULE_IDS（§13）；未知 / 非 7 P0 rule_id → precondition_error；不静默删除、不自动补入、不修改 trusted_input | 本轮恢复 R16 |
 
 ---
 
@@ -148,11 +150,13 @@ Stage E (Compare)
 | A-8 | 每个 GroundTruthFact.fact_id 通过 `cdm.id.is_valid_fact_id()` | 格式无效 → precondition_error |
 | A-9 | renderable_fact_types 中每个元素 ∈ 合法 fact_type 注册表 | 非法 → precondition_error |
 | A-10 | expected_evaluations 加载源中 evaluation_id 唯一 | 重复 → **precondition_error** |
+| A-11 | trusted_input.applicable_rules ⊆ P0_RULE_IDS（7 条冻结 P0 Rule，见 §13） | 出现未知 / 非 7 P0 的 rule_id → **precondition_error** |
 
 说明：
 - A-2：FactDisplaySpec 重复 fact_type 显式禁止，不允许 first-wins（v10 闭环保持）
 - A-4：R7 恢复——`value ∈ QUANTITY_KINDS` 检查降为冗余防御，**不是充分条件**；缺 unit / 多 unit / 错 mapping 都必须被 A-4 发现
 - A-10：R6 恢复——expected_evaluations 多 Evaluation 结构的查重入口
+- A-11：R16 恢复（旧契约遗漏）——未知 Rule **不进入 applicable_rule_count**（§1.3 计数在 Stage A 之后执行）、**不静默删除**（不做 filter）、**不自动补入缺失 Rule**、**不修改 trusted_input.applicable_rules**（只读校验：非法即 fail，不做修正）
 
 ### 2.2 Stage B: Applicability Resolution（只读，R5 恢复冻结）
 
@@ -171,6 +175,7 @@ rule_id ∈ trusted_input.applicable_rules  →  继续 Stage C–E
 
 Validator **不推导、不生成、不修改、不覆盖** applicable_rules（INV-20）。
 不存在第二个 applicability 真相源。
+Stage B 的 membership test 在 A-11 校验后的集合上执行（`applicable_rules ⊆ P0_RULE_IDS` 已由 Stage A 保证）。
 
 ### 2.3 Stage C: System Output Exists
 
@@ -814,6 +819,23 @@ def frozen_round(value: Any, decimals: int) -> float:
 | P0-6 | `CONCLUSION.COVERAGE` | 结论覆盖全部检测项 | required_evaluation_ids ⊆ conclusion.covers[] |
 | P0-7 | `EXPECTED.HIT` | ExpectedIssues 被全部命中 | 两阶段 matching（(rule_id, fact_id) exact + rule-level wildcard）+ 双向 one-to-one（§10） |
 
+**P0_RULE_IDS（冻结，A-11 校验基准）**：
+
+```python
+P0_RULE_IDS: frozenset[str] = frozenset({
+    "VALUE.CONSISTENCY",
+    "TABLE.INTERNAL",
+    "LOGIC.CONSISTENCY",
+    "ANCHOR.BINDING",
+    "CONCLUSION.DIRECTION",
+    "CONCLUSION.COVERAGE",
+    "EXPECTED.HIT",
+})
+```
+
+- Stage A A-11：`trusted_input.applicable_rules ⊆ P0_RULE_IDS`，否则 precondition_error（R16）
+- 与上表 7 条一一对应；P0 Rule 增删必须同步修改此集合（INV-1）
+
 **P0-1 精度唯一来源链（R4 恢复冻结，INV-19）**：
 
 ```
@@ -855,6 +877,7 @@ decimals
 | T-14 | Range / Whitelist | 区间逐 token 锚定；span 部分重叠不豁免；完全包含才豁免 |
 | T-15 | frozen_round 异常（B2） | frozen_round(None, 2) → ValueError；frozen_round(float("nan"), 2) → ValueError；frozen_round(float("inf"), 2) → ValueError（-Inf 同）；frozen_round(1.2, -1) → TypeError；frozen_round(2.345, 2) → 2.35 |
 | T-16 | Unit 完整 token 边界（B1） | 32.4m3 → unit=`m3` → UNKNOWN_UNIT；32.4N/mm2 → unit=`N/mm2` → UNKNOWN_UNIT；12.5N/mm²x → unit=`N/mm²x` → UNKNOWN_UNIT；三者均不得截断、不得 unit=None、不得被 lookahead 吞掉 numeric token |
+| T-17 | applicable_rules ⊆ P0_RULE_IDS（R16） | applicable_rules 含未知 rule_id（如 "NOT_A_P0"）→ precondition_error；不被计入 applicable_rule_count；不被静默删除；trusted_input.applicable_rules 不被修改 |
 
 ### 14.2 实现阶段划分
 
@@ -904,6 +927,22 @@ Phase 5: 状态机（accuracy_validator.py）
 | B2 | frozen_round 行为一致性 | §12（异常检查补齐，数学语义零改动） | ✅ 闭合 |
 | B3 | ActualIssue build-only | §11（__post_init__ 守卫 + object.__new__ build） | ✅ 闭合 |
 
+**旧契约遗漏恢复与扫描（本轮）**：
+
+| 项 | 内容 | 位置 | 状态 |
+| ---- | ---- | ---- | ---- |
+| R16 | applicable_rules ⊆ P0_RULE_IDS；未知 / 非 7 P0 rule_id → precondition_error；不静默删除、不自动补入、不修改 trusted_input | §2.1 A-11 / §2.2 / §13 / INV-23 / T-17 | ✅ 闭合 |
+
+旧契约遗漏扫描（5 项）：v8/v9 契约原文未落盘，以下各项无法从磁盘证据确证为**确定性回归**，按本轮指令一律标记 **REGRESSION CANDIDATE**、不直接修改；待冻结登记确认——确认任一成立（确为既有冻结规则且无明确替代）即回退 NOT READY 并在下轮恢复：
+
+| # | 扫描项 | 是否为既有冻结规则 | v10 当前状态 | 是否确定回归 | 是否修改 | 最终结论 |
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| 1 | case.validate() 纳入 Stage A | 指认为既有约束；v9 原文缺失，无法独立证实 | Stage A 无整体 case 校验；仅 A-7 / A-8 / A-10 局部覆盖（ExpectedIssue 去重、fact_id 格式、evaluation_id 去重）。Step 7-D `case.validate()` 覆盖 8 类校验（meta / G3 值与量纲 / G2 / structure / conclusion / known_issues / expected_issues / G3⊆G2），且 `from_dir()` 不自动调用 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认；确认成立 → 下轮以 A 项检查恢复（不重设计） |
+| 2 | whitelist precondition（登记结构：pattern / reason / scope / confirmed_by） | 指认为既有约束；无法独立证实 | §8.4 仅定义匹配语义（span containment）；Stage A 无 whitelist 登记结构校验 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认 |
+| 3 | TrustedTableSpec precondition | 指认为既有约束；无法独立证实 | trusted_table_specs 出现在 TrustedInput 但 TableSpecSnapshot 类型未定义；Stage A 无对应检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认；另注：类型未定义本身构成 P0-2 可执行性缺口（与 B 轮 SystemOutput 同类），确认后一并处理 |
+| 4 | renderable_fact_types ⊆ fact_display_spec.keys() | 指认为既有约束；无法独立证实 | 存在**部分替代**：A-9（元素 ∈ CDM fact_type 注册表）+ P0-1 惰性检查（snapshot 缺条目 → precondition_error，标注 v9 冻结保持） | 否——REGRESSION CANDIDATE（部分覆盖 ≠ 明确替代） | 否 | 待确认；若确认，需先裁决「Stage A 集合级校验」与「惰性检查」的替代关系 |
+| 5 | G3.unit ∈ UNIT_TO_QUANTITY（或 None）合法性 | 指认为既有约束；无法独立证实（Step 7-D validate_ground_truth_fact 亦不检查 unit） | A-8 仅校验 fact_id 格式；G3.unit 无注册表合法性检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认 |
+
 **内部交叉检查（B1–B3 修复轮，零新冲突）**：
 
 | 检查项 | 结果 | 位置 |
@@ -927,11 +966,13 @@ Phase 5: 状态机（accuracy_validator.py）
 | ---- | ---- |
 | 所有回退全部恢复 | ✅（R1–R12） |
 | B1–B3 全部闭合 | ✅ |
+| applicable_rules ⊆ P0_RULE_IDS 修复完成 | ✅（R16 / A-11 / INV-23 / T-17） |
+| 无未处理的确定性回归 | ✅（遗漏扫描 5 项均为 REGRESSION CANDIDATE，非确定性回归，已如实列出；待冻结登记确认——确认任一成立即回退 NOT READY） |
 | 所有 Unit lexer 反例闭合 | ✅（8/8，§5.4，含 B1 新增三例） |
 | 所有 truth source 唯一 | ✅（precision / applicability / unit registry / renderable 各单一来源） |
 | SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4） |
-| 没有重新设计其他部分 | ✅（B2 仅补异常检查；B3 仅加构造守卫；字段语义 / 六元 identity / SHA-256 issue_id 零改动；CaseStatus 聚合 / ST001 / S-3 / ± / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
+| 没有重新设计其他部分 | ✅（R16 仅新增一条 Stage A 集合校验；B2 仅补异常检查；B3 仅加构造守卫；字段语义 / 六元 identity / SHA-256 issue_id 零改动；CaseStatus 聚合 / ST001 / S-3 / ± / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
 
-执行层复核期间本文档状态为 NOT READY；B1–B3 全部闭合且交叉检查零新冲突后，状态恢复如下。
+执行层复核与遗漏扫描期间本文档状态为 NOT READY；R16 恢复完成、B1–B3 闭合、扫描未发现未处理确定性回归后，最终状态如下。
 
 **Step 7-E Coding Contract v10 = READY**
