@@ -1,0 +1,660 @@
+The user is asking for a "冻结契约回归审计" (frozen contract regression audit) of the Step_7_E_Coding_Contract_v10.md file I created. They've listed 12 audit items comparing v8/v9 frozen rules against v10 actual text.
+
+Let me analyze this carefully:
+
+1. **ExpectedIssue matching**: v8/v9 frozen: matching granularity = (rule_id, fact_id), severity NOT in matching, note NOT in matching. v10 wrote: rule_id + fact_id + severity. → This is a regression, must restore to rule_id + fact_id. Also one-to-one matching must be explicit: one ActualIssue can only be consumed by one ExpectedIssue. Don't use consumed ExpectedIssue index instead of consumed ActualIssue index.
+
+Wait — the user says "不要用 consumed ExpectedIssue index 代替 consumed ActualIssue index" — meaning the v10 §10.3 wrote `consumed_indices: set[int]` which records matched ExpectedIssue indices. But the one-to-one guarantee should be about ActualIssue being consumed — i.e., the consumed set should track ActualIssues so that one ActualIssue isn't matched to multiple ExpectedIssues. Actually let me re-read:
+
+"同时 one-to-one matching 必须明确：一个 ActualIssue 最多只能被一个 ExpectedIssue 消费。不要用 consumed ExpectedIssue index 代替 consumed ActualIssue index。"
+
+So the guarantee is: one ActualIssue can be consumed by at most one ExpectedIssue. The v10 contract wrote "consumed_indices: set[int] 记录已匹配的 ExpectedIssue 下标，不允许同一个 ExpectedIssue 被匹配两次" — this protects the ExpectedIssue side, but not the ActualIssue side. The user wants the ActualIssue side protected (an ActualIssue can only be consumed once). So this is a semantic direction issue in the matching logic.
+
+2. **ActualIssue identity**: v10 changed identity semantics. Previously frozen identity included: issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate. v10 changed to: category, severity, source. This is CONTRACT REGRESSION. Only fix: identity not allowed in public constructor. Don't change identity definition.
+
+So v10's §11 wrote:
+```
+identity = (rule_id, severity, category, fact_id, source)
+```
+This is wrong. The frozen identity fields were: issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate.
+
+3. **Numeric Unit Grammar**: UNIT_TO_QUANTITY claims to support N/mm², kN/m², % but the unit capture group `([A-Za-zμ²³]+)?` cannot match:
+- `N/mm²` — contains `/` which is not in `[A-Za-zμ²³]`
+- `kN/m²` — same problem
+- `%` — not in the character class
+
+So `12.5N/mm²` would match unit=N (just the N), `12.5%` would match unit=None. This is a blocker. Must give real regex behavior.
+
+4. **G3 precision vs D-025**: v10 P0-1 says "frozen_round(token_value, G3.precision) == G3.value". This makes G3.precision a precision truth source, conflicting with the frozen rule that TemplateSpec.fact_display_spec[fact_type].decimals is the ONLY display precision source. Must use only Snapshot decimals. Two truth sources not allowed: FactDisplaySpec.decimals AND G3.precision.
+
+5. **Stage B applicability**: v10 wrote "Stage B 为每条 Rule 判定当前用例是否适用，产出 applicable_rules" — but frozen rule: applicable_rules = case-local trusted config, Validator does NOT derive applicability itself. Stage B must only read trusted_input.applicable_rules with membership test.
+
+6. **ExpectedEvaluationSnapshot**: v10 TrustedInput wrote `expected_evaluations: ExpectedEvaluationSnapshot` (singular). LOGIC.CONSISTENCY needs to support multiple Evaluations. Must be a collection: list[...] or dict[...]. Choose one and freeze.
+
+7. **Unit Registry freeze verification**: v10 says "Unit Registry 的 hash 由 Contract 冻结" but never gives an actual hash value. Either delete the claim or provide canonical serialization + hash. Also Stage A must check mapping content EXACTLY equals frozen UNIT_TO_QUANTITY (not just value ∈ QUANTITY_KINDS) — missing/extra/wrong mappings must be detected.
+
+8. **Identifier scope mapping**: v10 §6.3 reintroduced ST→point/sample, K/C→component etc. mapping table. Must delete the entire table. Identifier registry only does text parsing, no scope_class inference. Anchor only compares: normalized_identifier == parse_fact_id(anchor.fact_id).instance_key.
+
+9. **renderable_fact_types semantics**: Must be "allowed-to-render fact_type set from Template/Render Plan" (trusted side), NOT "actually rendered fact_types" (which would come from System Output). Distinguish allowed-to-render vs actual-rendered. Step 7-E uses the former.
+
+10. **SystemOutput schema**: `rendered_segments: list[str]` — if Validator needs AnchorDeclaration (segment_location, char_start, char_end, fact_id), then SystemOutput schema must express RenderedSegment as a structured type, not plain list[str]. Also check structured_tables / TableCell / StructuredTable consistency.
+
+11. **Output format**: Must output REGRESSION FOUND or NO REGRESSION, listing per item: old frozen rule, v10 current text, conflict or not, severity, minimal fix.
+
+12. **READY condition**: Only if all frozen rules kept + 8 v9→v10 fixes kept + new tokenizer unit counterexamples pass + no second truth source + no unrecorded identity/matching semantic changes → READY, else NOT READY.
+
+So my task: perform the audit on the v10 file I created. I should NOT write code, NOT create v11, NOT directly announce READY.
+
+Let me actually read the v10 file carefully and audit each of the 12 items. I have the file content from when I wrote it. Let me go through each item:
+
+**Item 1: ExpectedIssue matching**
+v10 §10.2 Phase 1: "ActualIssue 的 rule_id + fact_id + severity 与 ExpectedIssue 完全相等"
+Frozen: matching granularity = (rule_id, fact_id), severity NOT in matching.
+→ **REGRESSION FOUND**. Severity participation changes matching semantics: an ExpectedIssue with severity="error" would fail to match an ActualIssue with severity="warning" even though same rule_id+fact_id. 
+
+Minimal fix: Phase 1 matching = rule_id + fact_id equality only.
+
+Also §10.3: "consumed_indices: set[int] 记录已匹配的 ExpectedIssue 下标，不允许同一个 ExpectedIssue 被匹配两次" — this protects the ExpectedIssue from double-consumption but the one-to-one guarantee the user demands is: 一个 ActualIssue 最多只能被一个 ExpectedIssue 消费 (one ActualIssue can be consumed by at most one ExpectedIssue). So we need consumed ActualIssue indices too. v10 doesn't have that. → regression/incompleteness.
+
+**Item 2: ActualIssue identity**
+v10 §11.2: `identity = (rule_id, severity, category, fact_id, source)`
+Frozen identity fields (per user): issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate.
+v10 changed: rule_id (not in frozen set), severity (not in frozen set), category (not in frozen set), source (≈ location?), fact_id (in frozen set).
+→ **CONTRACT REGRESSION**. Identity semantics were silently changed without a new ADR/Decision.
+
+Wait — but I need to be careful here. In the conversation summary, the ActualIssue was described as: "ActualIssue：identity/issue_id 仅由 build() 自动生成；issue_id = SHA-256(canonical JSON of identity tuple)". The summary doesn't specify the exact frozen identity fields. The user now states the frozen identity fields were: issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate. Per user rule #1: "任何的需求，都要分析其需求背景以及意图,以及最重要的 通过自行检查 去确认用户所说的信息是不是这样。"
+
+Can I verify this from the workspace? The ActualIssue was defined in a previous conversation's contract (v8/v9) which was never persisted to disk (I found no contract file before creating v10). Let me check if there are any artifacts in the workspace that might contain the v8/v9 ActualIssue definition — maybe in docs, or maybe in some other file. Actually I searched before with Glob for "**/*Step 7-E*" and "**/*v9*" and "**/*contract*" and found nothing. So the v8/v9 contract text is not on disk. The only source of the frozen identity definition is the conversation summary and the user's statement.
+
+The conversation summary says: "ActualIssue：identity/issue_id 仅由 build() 自动生成；issue_id = SHA-256(canonical JSON of identity tuple)；禁止 Python hash() / 外部传入" — it doesn't list identity fields. The user's statement is the authoritative record of what was frozen. Per the "trust but verify" and the user rule about self-checking, I should note that the v8/v9 text isn't available on disk, so the audit of item 2 relies on the user's record of the frozen fields — but the internal evidence within v10 itself is damning: v10 §11.2 identity = (rule_id, severity, category, fact_id, source). The fields rule_id, severity, category, source are NOT in the frozen set {issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate}. Only fact_id overlaps. This is clearly a different identity tuple.
+
+Hmm, wait. Actually, let me think about whether rule_id should be in identity. The frozen set per user: issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate. Note that in Step 7-D, KnownIssue has issue_type. The frozen identity has issue_type — which v10 renamed to "category". And "location" became "source". These are semantic drifts/renames. And v10 ADDED rule_id and severity to identity which weren't there.
+
+So: REGRESSION — identity definition silently changed. Minimal fix: restore identity tuple to (issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate), keep only the init=False / build() constructor fix.
+
+**Item 3: Numeric Unit Grammar**
+v10 §5.1 NUMERIC_TOKEN_RE unit group: `([A-Za-zμ²³]+)?`
+- `N/mm²` contains `/` → regex would match only `N` as unit (stopping at `/`). Actually wait — the regex is `([A-Za-zμ²³]+)?` after optional whitespace. For "12.5N/mm²", after matching "12.5", the unit group `[A-Za-zμ²³]+` matches "N", then "mm²" remains unmatched as part of this token. So unit = "N", not "N/mm²". Then UNIT_TO_QUANTITY["N"] = "force" ≠ "pressure". → wrong quantity_kind.
+- `12.5%` — `%` not in `[A-Za-zμ²³]` → unit group doesn't match → unit = None → not "ratio".
+- `kN/m²` → matches "kN" → hmm, "kN" is in UNIT_TO_QUANTITY as "force" ≠ pressure.
+
+→ **BLOCKER REGRESSION**. The regex cannot express the frozen Unit Registry's own contents. The unit grammar must be extended, e.g. `([A-Za-zμ%/²³]+(?:/[A-Za-zμ%/²³]+)*)?` or something that handles `/` and `%`. But careful: per user, don't write code — just specify the required grammar behavior in the audit, i.e., the minimal fix description.
+
+Minimal fix: redefine unit capture group to support `/` and `%`, e.g. `([A-Za-zμ]+(?:/[A-Za-zμ²³]+)*[%²³]?)` — hmm, need to be careful about the exact order (² comes after / or before?). Units like "N/mm²" = N + / + mm + ². "kN/m²" = kN + / + m + ². "m²" = m + ². "%" standalone. A reasonable grammar: `([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?%?)` won't handle "%" alone. Maybe: `(%|[A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?)`. But I shouldn't over-engineer; in the audit I can specify: unit grammar must be extended to match the complete set of unit strings in UNIT_TO_QUANTITY (including `/` and `%`), and the audit result is the blocker. Since this is an audit (not v11), I just flag it with severity BLOCKER and minimal fix direction.
+
+Actually the user says: "必须明确给出真实 regex 行为。反例：12.5N/mm² 必须得到 unit=N/mm², quantity_kind=pressure... 禁止：N/mm² → N, kN/m² → kN, % → None. 这是 blocker。"
+
+So the audit must document: current v10 regex behavior for these inputs (unit=N, unit=kN, unit=None), and the required behavior. Minimal fix: extend unit grammar.
+
+**Item 4: G3 precision vs D-025**
+v10 §13 P0-1: "frozen_round(token_value, G3.precision) == G3.value"
+Frozen: TemplateSpec.fact_display_spec[fact_type].decimals = display precision 唯一来源; Step 7-E Snapshot = 只读 decimals.
+v10 §3.1 itself says Snapshot only reads decimals. But P0-1 uses G3.precision for comparison. Two truth sources exist simultaneously: FactDisplaySpecSnapshot.decimals (for rendering check) and G3.precision (for value comparison).
+→ **REGRESSION** (second truth source). 
+
+Hmm, but wait — is this actually a regression or was it like this in v8/v9 too? The user says "此前冻结：TemplateSpec.fact_display_spec[fact_type].decimals = display precision 唯一来源. Step 7-E Snapshot = 只读 decimals. 必须保证 P0 value comparison 只使用这个 decimals." So regardless of history, v10 must use only Snapshot decimals. The v10 text "frozen_round(token_value, G3.precision)" introduces the second source. Minimal fix: P0-1 comparison uses FactDisplaySpecSnapshot.decimals (looked up by the anchor's fact_type), G3.precision is not used in value comparison (G3.precision may remain as data field in Step 7-D but doesn't drive comparison... actually per D-025, decimals is the only truth source; G3.precision could serve as cross-check diagnostic? No — user says "不得同时存在... 两个 truth source" — so P0 comparison only uses Snapshot decimals).
+
+Hmm, one nuance: for TABLE.INTERNAL and other computations, precision also matters, but the audit only needs to flag P0-1. Minimal fix: replace G3.precision with snapshot decimals in P0-1.
+
+**Item 5: Stage B applicability**
+v10 §2.2: "Stage B: Applicability — 为每条 Rule 判定当前用例是否适用，产出 applicable_rules: frozenset[str]" and §1.3 says "applicable_rule_count 仅从 TrustedInput.applicable_rules 集合大小计算" — but Stage B "产出 applicable_rules" implies the validator derives/produces it, creating a second applicability truth source.
+Frozen: applicable_rules = case-local trusted config; Validator only reads.
+→ **REGRESSION**. Minimal fix: Stage B renames to "Applicability Resolution" — pure membership test against trusted_input.applicable_rules: rule_id not in set → NOT_EVALUABLE; rule_id in set → continue. No derivation, no production of the set.
+
+**Item 6: ExpectedEvaluationSnapshot**
+v10 §3: `expected_evaluations: ExpectedEvaluationSnapshot` — singular wrapper, but structure undefined in v10 (never defined its shape!). Actually looking at my v10 text: TrustedInput has `expected_evaluations: ExpectedEvaluationSnapshot  # LOGIC.CONSISTENCY 唯一可信答案` — the snapshot's internal structure is never specified anywhere in v10. So it's ambiguous whether it holds one evaluation or many. LOGIC.CONSISTENCY requires multiple Evaluations support.
+→ **REGRESSION** (undefined/ambiguous cardinality). Minimal fix: freeze as a collection. User says choose list[...] or dict[...] and freeze. Which to choose? A dict keyed by evaluation_id gives O(1) lookup for coverage checks (CONCLUSION.COVERAGE also needs required_evaluation_ids ⊆ conclusion.covers[]...). Hmm, but CONCLUSION.COVERAGE uses GroundTruthConclusion.required_evaluation_ids. For LOGIC.CONSISTENCY, the ExpectedEvaluationSnapshot per earlier design is "唯一 trusted answer for LOGIC.CONSISTENCY". I'd choose `list[ExpectedEvaluation]` or `dict[str, ExpectedEvaluation]`. Since evaluation ids are opaque stable identifiers (per Step 7-D conclusion), a dict keyed by evaluation_id enables deterministic lookup and duplicate detection. But list preserves order and is simpler. The user just says "选择一种并冻结". I'll recommend dict[evaluation_id, ExpectedEvaluation] for duplicate detection + direct lookup — actually wait, I should be careful: I shouldn't make a design decision beyond the minimal. The audit output format requires "最小修正" per item. I can state: freeze as `dict[str, ExpectedEvaluationSnapshot]` keyed by evaluation_id (opaque, from GroundTruthConclusion.required_evaluation_ids domain) — with duplicate id → precondition_error. Or list. Let me think about which is more minimal and consistent.
+
+Step 7-D GroundTruthConclusion.required_evaluation_ids is a list of opaque IDs. LOGIC.CONSISTENCY compares system evaluations against expected evaluations. A dict keyed by evaluation_id allows: duplicate detection at Stage A, and direct membership for coverage. But the minimal fix could equally be list with Stage A duplicate check. Hmm. The user's instruction: "必须明确：LOGIC.CONSISTENCY 需要支持多个 Evaluation，所以必须是明确集合结构：list[...] 或 dict[...] 选择一种并冻结。"
+
+Since this is an audit report, I should flag the regression and give the minimal fix recommendation. I'll pick dict[str, ExpectedEvaluationEntry] keyed by evaluation_id because: (a) duplicate id detection is structural (dict build fails), (b) P0-3 comparison is keyed lookup, (c) P0-6 coverage is set membership. But note: I must NOT create v11 now — just audit. The minimal fix is described in the audit.
+
+Wait, also note: ExpectedEvaluationSnapshot — the user says "是否把原来的多 Evaluation 结构错误变成单数" — i.e., the original frozen structure was a multi-Evaluation snapshot and v10 wrote it as singular. The name "ExpectedEvaluationSnapshot" itself is ambiguous. Minimal fix: redefine TrustedInput.expected_evaluations: dict[str, ExpectedEvaluation] (or keep wrapper name but define it as a collection container with evaluations: dict). I'll present the minimal fix clearly.
+
+**Item 7: Unit Registry freeze verification**
+v10 §3.2 says "Unit Registry 的 hash 由 Contract 冻结，加载时做完整性校验" — but no hash value given anywhere. Also Stage A A-4 only checks "每个 value ∈ QUANTITY_KINDS" — doesn't detect missing/extra units or wrong mappings.
+→ **REGRESSION** (unfounded freeze claim + insufficient Stage A check). Minimal fix: either (a) delete the hash claim, or (b) define canonical serialization (e.g., JSON with sorted keys, ensure_ascii=False... actually canonical JSON sort_keys=True) + compute and publish the SHA-256 hash in the contract, AND Stage A check changes to: mapping == UNIT_TO_QUANTITY exactly (dict equality). The minimal, no-code-fix: Stage A A-4 → exact equality check against the frozen dict literal in the contract; hash claim either removed or fulfilled with an actual computed hash. Since we can't write code but CAN compute a hash of the canonical serialization... hmm, computing the hash would require running code. I could compute it manually? That's error-prone. The cleaner minimal fix: replace the hash claim with exact-equality check (Stage A compares loaded mapping against the contract's frozen dict; any missing/extra/mismatched entry → precondition_error). That fully satisfies "少一个/多一个/错一个都必须被发现" without needing a hash value. Optionally keep hash as an additional integrity mechanism but then must give the real value — better to drop it in this round.
+
+**Item 8: Identifier scope mapping**
+v10 §6.3 has a full table: ST→point/sample, K,C→component, M→material, P→point, S→sample/defect, B→building, D→defect.
+Frozen: Step 7-E identifier parsing does NOT do scope_class inference. Anchor comparison: normalized_identifier == parse_fact_id(anchor.fact_id).instance_key.
+→ **REGRESSION** (reintroduced a removed table). Minimal fix: delete §6.3 entirely; Anchor identifier binding compares normalized identifier text with instance_key segment of the bound fact_id.
+
+Note v10 §6.3 even has a hedge note "映射是'可能'关系" — still a second inference path, must go.
+
+**Item 9: renderable_fact_types semantics**
+v10 §3.3: "renderable_fact_types（TrustedInput 中）：本报告实际渲染过的 fact_type 快照" — "实际渲染过的" = actually rendered = derived from System Output. Frozen semantics: allowed-to-render set from Template/Render Plan (trusted side). Actual System Output cannot feed TrustedInput.
+→ **REGRESSION** (semantic drift: allowed-to-render → actual-rendered). Minimal fix: redefine as "允许渲染的 fact_type 集合，来自 Template/Render Plan（trusted 侧）"; distinguish actual-rendered as a SystemOutput-side concept if needed for diagnostics but not part of TrustedInput.
+
+**Item 10: SystemOutput schema**
+v10 §4: `rendered_segments: list[str]` — plain strings. But ANCHOR.BINDING (§8) requires anchor declarations with segment_location, char_start, char_end, fact_id... Where do anchors live? In 04_REPORT_IR §13.1, narrative paragraphs carry anchors[] declarations: {token, fact_id}. The Validator needs to check bindings: token location within rendered text. If rendered_segments is list[str], there's no place to carry AnchorDeclaration / per-token binding info. Also v10 §11 example shows source="rendered_segments[2]:char[15-20]" implying positional info exists, but list[str] has no char positions beyond string indexing — actually char positions within a string are derivable, but the anchor declaration (which token binds to which fact_id) needs structure.
+
+Hmm wait — does Step 7-E need AnchorDeclaration from SystemOutput? The summary says: "ANCHOR.BINDING：Stage D 6 类检查；Stage E 级联 unit 判定". And "IDENTIFIER... 最终 Anchor 只比较 normalized_identifier == parse_fact_id(anchor.fact_id).instance_key" (item 8 in current audit). So yes, anchors exist as declarations (from Report IR narrative paragraphs). The Report IR is in SystemOutput.report_ir (TypedDict). So the anchors could be read from report_ir... but rendered_segments as list[str] can't express which rendered text corresponds to which IR paragraph — the mapping between rendered text and anchor declarations is lost. So SystemOutput schema is inconsistent: Validator needs (segment text + its anchor declarations + location info) — i.e., RenderedSegment structure: {text, segment_location (section/block ref), anchors: [AnchorDeclaration{token, fact_id, char_start, char_end}]}.
+
+Also structured_tables: list[TableRow] — v10 never defines TableRow, TableCell, StructuredTable. Underspecified.
+→ **REGRESSION / underspecification**. Minimal fix: freeze RenderedSegment as a structured record: {segment_id/location, text, anchors: list[AnchorDeclaration]} where AnchorDeclaration = {token, fact_id, char_start, char_end}; rendered_segments: list[RenderedSegment]. And define StructuredTable {table_id, headers, rows: list[list[TableCell]]} with TableCell ∈ {text, fact_id?}. Actually the minimal fix statement should be: rendered_segments must be list[RenderedSegment] (structured), not list[str]; structured_tables must be defined (StructuredTable with TableCell). 
+
+Hmm, but careful: the user's exact demand for item 10: "如果 Validator 需要 AnchorDeclaration，则 SystemOutput schema 必须能表达 RenderedSegment。不能把它简化成 list[str]。同样检查 structured_tables、TableCell、StructuredTable 是否前后一致。" So audit finding: v10 uses list[str] → cannot express AnchorDeclaration → inconsistent with §8 ANCHOR.BINDING requirements. REGRESSION (or "schema inconsistency"). Severity: HIGH/BLOCKER? It's a schema expressiveness gap — I'd say HIGH (blocks implementation of ANCHOR.BINDING per frozen design) — maybe BLOCKER since it makes the anchor check unimplementable as specified. I'll rate HIGH with clear minimal fix. Actually, let me think: without anchor declarations, Stage E compare for ANCHOR.BINDING cannot happen at all — the whole rule is unimplementable. That's BLOCKER-level for the contract's completeness. Hmm, severity scale: I'll use BLOCKER / HIGH / MEDIUM / LOW. Item 10 → HIGH (implementability gap; the anchor data exists in report_ir TypedDict presumably, but the mapping rendered-text↔anchor is undefined). Let me decide: the frozen v8/v9 presumably had AnchorDeclaration in the SystemOutput schema (the user says "如果 Validator 需要 AnchorDeclaration，则 SystemOutput schema 必须能表达 RenderedSegment" — implying the frozen design had these). v10 simplified to list[str] → regression. Severity: HIGH.
+
+**Item 11 & 12**: output format requirements for my audit response, and READY condition.
+
+Now — the output must be an audit report, NOT a new contract version, NOT code, NOT "READY". I must output REGRESSION FOUND or NO REGRESSION with per-item details: 旧冻结规则 / v10 当前文本 / 是否冲突 / 严重程度 / 最小修正.
+
+Let me also do a few more cross-checks of v10 for other regressions I can find myself (the user asked specifically for these 12 items, but a good audit also verifies the 8 v9→v10 closures are still intact — item 12 requires "v9→v10 的 8 个修正全部保持"). Let me check:
+
+The 8 closures from v10:
+1. applicable/evaluable counts defined (§1.3) — still intact? Yes §1.3 exists. But note the interplay with item 5: §1.3 counts from TrustedInput.applicable_rules — fine; but Stage B wording conflicts. The count definition itself is OK.
+2. Unit Registry content frozen (§3.2) — dict is complete, but "hash 由 Contract 冻结" claim is unfulfilled (item 7). The dict content itself is fine. However item 3: the regex can't match some of its own units — that's a cross-consistency failure.
+3. D-025 two layers (§3.1) — text intact, but P0-1 violates it (item 4). So closure 3 is undermined by P0-1.
+4. ActualIssue constructor (§11) — init=False fix is there (good, that part is kept), but identity definition was changed (item 2) → partially regressed.
+5. FactDisplaySpec duplicate → precondition_error (§2.1 A-2, §9.1) — intact.
+6. Tokenizer candidate alignment (§5.3) — ST001 numeric=NONE, S-3 numeric=3 — intact. But NEW unit-grammar counterexamples fail (item 3).
+7. renderable_fact_types schema (§3.3) — schema intact but semantics drifted (item 9).
+8. Version hygiene — file name/title/body v10 — intact (this audit doesn't create v11, so fine).
+
+Also check other invariants in v10:
+- INV-4: ExpectedIssue 不内部 deduplicate — v10 §2.1 A-7: "ExpectedIssue 不重复同一 rule_id + fact_id 组合 → precondition_error" — hmm, is this consistent with v8/v9? The summary says "ExpectedIssue 不内部 deduplicate（重复 → precondition_error）" — v10 A-7 matches that. OK. But wait — does A-7 conflict with matching granularity (rule_id, fact_id)? If two ExpectedIssues have the same (rule_id, fact_id), matching would be ambiguous → precondition_error. That's consistent.
+
+Hmm, actually wait: severity not in matching + duplicate (rule_id, fact_id) → precondition_error. Consistent.
+
+- INV-9 frozen_round — §12 intact.
+- INV-10 issue_id SHA-256 — §11.3 intact (though identity content changed).
+- INV-11 is_valid_fact_id — §8.1 BIND-5 intact.
+- INV-12 unit values from QUANTITY_KINDS — §3.2 intact.
+- INV-14 — §3.1 intact but P0-1 violates (item 4).
+
+One more check — v10 §8.2 Stage E unit cascade: "token.parsed_unit == G3.unit → PASS" — uses G3.unit as expected unit. Is that a second truth source for unit? D-025 says TemplateSpec.fact_display_spec has unit as render spec... but Step 7-E doesn't do unit conversion and doesn't read unit from TemplateSpec. G3 (GroundTruthFact) has a unit field (Step 7-D: fact_id, value, quantity_kind, precision, unit). Comparing token unit vs G3.unit — G3 is trusted input, that's the answer key, so comparing against G3.unit is legitimate for VALUE.CONSISTENCY/ANCHOR. The D-025 truth-source rule is about DISPLAY format (how to render), while G3.unit is about what the value should be. Hmm, but item 4 says decimals: G3.precision must not be used. By symmetry, should token unit compare against G3.unit or against TemplateSpec unit? The user's item 3 says: "12.5N/mm² 必须得到 unit=N/mm², quantity_kind=pressure" — the check is quantity_kind via registry. Item 4 only targets precision. So unit comparison vs G3.unit stays (G3 is the answer key). OK, not flagged.
+
+Wait, but hmm — there's a subtle issue: if TemplateSpec.unit says "MPa" and G3.unit says "MPa" they should agree... but that's outside audit scope. Item 4 is only about precision. Stick to scope.
+
+Also v10 §13 P0-1: "frozen_round(token_value, G3.precision) == G3.value" — flag per item 4.
+
+Also §2.1 A-8: GroundTruthFact.fact_id validated via is_valid_fact_id — fine.
+
+Also §2.1 A-2: duplicate fact_type in fact_display_spec → precondition_error — good (v9→v10 fix #5 intact).
+
+Now also check: does v10 §10.2 Phase 2 wildcard make sense with severity removed? Phase 2: "ExpectedIssue 无 fact_id，同 rule_id 的 ActualIssue 任一可匹配" — with matching = (rule_id, fact_id): exact phase = rule_id+fact_id equal; wildcard phase = ExpectedIssue has fact_id=None → matches any ActualIssue with same rule_id. That's consistent with (rule_id, fact_id) granularity. Fine.
+
+One more: one-to-one. With matching granularity (rule_id, fact_id) and duplicate (rule_id, fact_id) forbidden in ExpectedIssues (A-7)... but wildcard ExpectedIssues (fact_id=None) with same rule_id: two wildcard ExpectedIssues with same rule_id — is that a duplicate under A-7? A-7 says "同一 rule_id + fact_id 组合" — two wildcards both have fact_id=None, so same (rule_id, None) combo → precondition_error. OK so per rule_id at most one wildcard. Then one-to-one: each ActualIssue consumed at most once; each ExpectedIssue consumed at most once. The consumed sets must track both directions? Minimal per user: "一个 ActualIssue 最多只能被一个 ExpectedIssue 消费。不要用 consumed ExpectedIssue index 代替 consumed ActualIssue index。" So the contract must specify consumed_actual_indices (or equivalent) — the ActualIssue side. v10 §10.3 only has consumed_indices for ExpectedIssue side. Minimal fix: rename/clarify — maintain consumed on the ActualIssue side (each ActualIssue matched at most once); ExpectedIssue side also one-shot. Actually for EXPECTED.HIT the question is whether every ExpectedIssue got matched; an ActualIssue being consumed twice would inflate... hmm, actually the risk: two ExpectedIssues (exact + wildcard same rule... no, wildcard dup forbidden)... Let me think: ExpectedIssue E1 (rule X, fact F1), E2 (rule X, fact F2). ActualIssues: A1 (rule X, fact F1). Phase 1: E1 matches A1. E2 unmatched → E2 unhit → EXPECTED.HIT fail. Now suppose wildcard E3 (rule X, None) and exact E1 (rule X, F1). ActualIssues: A1 (rule X, F1), A2 (rule X, F1) [duplicate actual issues allowed? ActualIssues are generated by validator from its own findings; duplicates possible]. Phase 1: E1 ↔ A1. Phase 2: E3 matches any remaining rule-X ActualIssue → A2. Fine. Now: A1 only (one actual): E1 ↔ A1 (phase 1). Phase 2: E3 needs an ActualIssue — if A1 already consumed, and we don't track ActualIssue consumption, E3 might match A1 again → both E1 and E3 hit by the same single ActualIssue → inflates hit rate / masks missing coverage. Hence the need: consumed ActualIssue indices. Good, that's exactly the user's point. So minimal fix: matching maintains both consumed sets; each ActualIssue consumed ≤ 1 time; each ExpectedIssue consumed ≤ 1 time.
+
+Now severity of each finding. Let me assign:
+
+1. ExpectedIssue matching granularity + one-to-one direction — REGRESSION, HIGH (changes hit-rate semantics; severity mismatch would cause false FAIL/PASS in EXPECTED.HIT). Actually severity participation: ExpectedIssue severity="error", system produces same issue with severity="warning" → no match → EXPECTED.HIT FAIL → false negative for the system. Or conversely... The frozen rule says severity not in matching. v10 includes it → REGRESSION HIGH. I'd say HIGH.
+
+2. ActualIssue identity semantics changed — CONTRACT REGRESSION, HIGH (silent semantic change of frozen definition without ADR; affects issue_id values, affects regression baselines). Per user's own words "CONTRACT REGRESSION". Severity HIGH (or CRITICAL?). The user framed items with specific judgments; I'll use HIGH and label "CONTRACT REGRESSION" as required.
+
+3. Unit regex can't match own registry — BLOCKER (user explicitly says 这是 blocker). v10's own UNIT_TO_QUANTITY contains N/mm², kN/m², % which NUMERIC_TOKEN_RE's unit group cannot capture → unit resolution wrong for real tokens. BLOCKER.
+
+4. G3.precision as second truth source in P0-1 — REGRESSION, HIGH (violates D-025 single truth source; v10 §3.1 itself contradicts §13).
+
+5. Stage B derives applicability — REGRESSION, MEDIUM/HIGH. It creates a second applicability truth source. The count definition (§1.3) still reads TrustedInput, but Stage B "产出 applicable_rules" contradicts. Severity: HIGH? The consequence: validator might mark rules applicable/differently than case config → nondeterministic evaluation scope. I'd say HIGH. Hmm, but is it maybe MEDIUM since §1.3 anchors the count to trusted input? The Stage B text is the operational definition of applicability in the state machine; the contradiction between §2.2 and §1.3 is itself a defect. I'll say HIGH.
+
+Hmm, let me calibrate severities more carefully:
+- BLOCKER: makes contract unimplementable or guarantees wrong results (item 3; item 10 arguably).
+- HIGH: changes frozen semantics / second truth source / silent identity change (items 1, 2, 4, 5).
+- MEDIUM: incomplete freeze claims / underspecification (items 6, 7).
+- MEDIUM/LOW: reintroduced removed content (item 8) — actually item 8 reintroduces scope inference which is a semantic addition violating frozen scope → HIGH? The frozen rule: no scope_class inference. v10 §6.3 reintroduces it as a table (with a "可能" hedge). It creates an inference path that contradicts "Anchor 只比较 normalized_identifier == instance_key". Severity: HIGH (semantic regression), though it's hedged... The hedge doesn't neutralize it: the table declares possible mappings, which an implementer could use. I'll say HIGH but note the hedge. Hmm, or MEDIUM since it's marked as "可能" and "不做最终类型判定"? The note says "Identifier Grammar 只负责提取 candidate，不做最终类型判定" — so v10 explicitly says no final typing. But the mapping table itself shouldn't exist per frozen rule ("删除整张 scope mapping 表"). The presence is a regression; the operational impact is limited by the disclaimer. I'll rate MEDIUM with the note that the table must be deleted regardless. Hmm, user said "如果存在：删除整张 scope mapping 表" — mandatory removal. Severity MEDIUM (documentation-level regression with hedged semantics, but mandatory removal). Actually, thinking again: per user's framework, "旧规则回退" is a regression regardless of hedge. I'll grade it HIGH? Let me not overthink; I'll use: REGRESSION, severity MEDIUM (hedged, non-operational, but must delete). Hmm — but if I understate, user may push back; if I overstate, less harm. The user's own categorization in item 2 says "必须明确判定为 CONTRACT REGRESSION". For item 8 they say "如果存在：删除". I'll mark item 8 as REGRESSION, severity MEDIUM, action delete table.
+
+6. ExpectedEvaluationSnapshot cardinality undefined — REGRESSION (underspecified; LOGIC.CONSISTENCY needs multi-evaluation), HIGH? The structure is completely undefined in v10 (no shape at all), which means P0-3 unimplementable as written. Severity: HIGH (implementability + frozen multi-structure lost). Minimal fix: freeze as dict[str, ExpectedEvaluation] keyed by evaluation_id (opaque ID), with Stage A duplicate-key → precondition_error. Or list — I must choose one. I'll choose dict keyed by evaluation_id and justify: P0-3 lookup + P0-6 coverage membership + structural duplicate detection. 
+
+Hmm wait, P0-6 CONCLUSION.COVERAGE: required_evaluation_ids ⊆ conclusion.covers[] — that's GroundTruthConclusion.required_evaluation_ids vs system's conclusion covers. The expected_evaluations are for LOGIC.CONSISTENCY (P0-3): compare system's evaluations against expected ones. The evaluation ids in ExpectedEvaluation should come from the same opaque id domain (required_evaluation_ids). dict keyed by evaluation_id works.
+
+7. Unit Registry hash claim without value + A-4 insufficient — REGRESSION, MEDIUM. Minimal fix: (a) remove hash claim OR provide real canonical serialization + hash; (b) A-4 → exact dict equality with frozen UNIT_TO_QUANTITY (detects missing/extra/mismatched). I'll recommend (b) exact equality + drop the hash sentence (hash adds nothing beyond equality at load time).
+
+Hmm — actually should I keep hash? The user gave two options: "删除 'hash 已冻结' 的声明 或者 真正给出 canonical serialization + hash". Either is acceptable. Exact-equality Stage A check is the substantive fix. I'll recommend: replace hash claim with exact-equality check; hash optional later if cross-process integrity needed. Minimal.
+
+8. §6.3 scope mapping table — REGRESSION, MEDIUM (delete). Also add frozen anchor comparison: normalized_identifier == parse_fact_id(anchor.fact_id).instance_key.
+
+9. renderable_fact_types semantics drift — REGRESSION, HIGH (System Output must never feed TrustedInput; allowed-to-render vs actual-rendered). v10 §3.3 says "本报告实际渲染过的 fact_type 快照" — that's actual-rendered. Fix: allowed-to-render from Template/Render Plan.
+
+10. SystemOutput rendered_segments: list[str] — REGRESSION, HIGH/BLOCKER. Need RenderedSegment structure with anchors + char positions; structured_tables/TableRow/TableCell undefined. Severity: I'll say BLOCKER? Let's think: can ANCHOR.BINDING be implemented with list[str] + anchors from report_ir? The rendered text and the IR anchors need alignment. Without segment-level structure, the Validator cannot map anchor declarations to rendered text reliably. The frozen design (per user's item 10) expects RenderedSegment with AnchorDeclaration (segment_location, char_start, char_end, fact_id). v10 lost that. For a frozen contract intended for implementation, this is a structural gap → I'd grade HIGH (schema expressiveness regression). BLOCKER? The user marked item 3 as blocker explicitly. For item 10 they just say check consistency. I'll grade HIGH.
+
+Also structured_tables: v10 §4 `structured_tables: list[TableRow]` — TableRow undefined; TABLE.INTERNAL (P0-2) needs cells + aggregates. Undefined → underspecification, MEDIUM→ part of item 10 finding, HIGH overall for the SystemOutput schema item. I'll present as one finding with two sub-points (rendered_segments, structured_tables).
+
+11/12: output format + READY condition — these are meta requirements for my response.
+
+Overall verdict: REGRESSION FOUND (10 findings). Per item 12's READY condition: original frozen rules NOT all kept (items 1,2,4,5,8,9 regressed), tokenizer unit counterexamples FAIL (item 3), second truth source exists (item 4), unrecorded identity/matching semantic changes (items 1,2) → **NOT READY**.
+
+Now — how should I structure the response? The user wants the audit output. Per their format:
+
+```
+REGRESSION FOUND / NO REGRESSION
+逐项列：
+    旧冻结规则
+    v10 当前文本
+    是否冲突
+    严重程度
+    最小修正
+```
+
+I should NOT create v11, NOT write code, NOT modify anything. This is a read-only audit + report. Should I write the audit to a file? The user says "不要写代码。不要创建 v11。不要直接宣布 READY。" They didn't ask for a file. The user rules say never create files unless necessary. The audit report can be the chat response. Given previous pattern (contracts persisted to docs/), the user might want persistence, but they explicitly said don't create v11. An audit report file wasn't requested → keep it in chat.
+
+Also per user rule #4: "在进行任务前必须将你理解的意图提供给用户进行确认。" Hmm — but this task is a read-only audit with explicit instructions; the intent is unambiguous. Asking for confirmation would be bureaucratic. The instruction list is extremely precise. I'll proceed directly but open with a one-line intent statement (确认意图) as the rules require, then the audit. Actually the user rule says must provide understood intent for confirmation before task. But the task itself is pure analysis with no side effects. Given output-efficiency guidance and that the user gave 12 explicit items, I'll state the intent briefly and proceed — the "confirmation" is implicit in their exhaustive spec. Actually, to respect the rule minimally, I'll start with "意图理解" one-liner then the audit. That matches how I handled the previous turn (opened with 意图理解 section).
+
+Now, before writing the audit, should I re-read the v10 file to quote exact text? I wrote it and have it in context from the Write call. The content is in my context (I wrote the full file). I can quote from it directly. But to be safe and accurate with line numbers for citations, I could re-read specific sections. The file is 585 lines. I have the full content from my Write. Line numbers I can approximate from the written content — but for clickable references I need accurate line numbers. Let me re-read the file to get exact line numbers for the sections I'll cite: §10 (matching), §11 (identity), §5.1/5.3 (regex), §13 (P0-1), §2.2 (Stage B), §3 (TrustedInput), §3.2 (unit registry hash claim), §6.3 (scope mapping), §3.3 (renderable), §4 (SystemOutput).
+
+Let me read the file to get precise line numbers. I'll read the whole file (585 lines, fine).
+
+Then produce the audit report.
+
+Structure of my response:
+
+1. 意图理解 (brief)
+2. 审计方法一句话 (v8/v9 冻结规则 → v10 文本 → 差分)
+3. 判定：REGRESSION FOUND
+4. 逐项审计表 (12 items — items 11/12 are meta, confirm applied)
+5. READY 条件核对 (item 12: 5 conditions each fail/pass)
+6. 结论: NOT READY + 下一步(等用户确认后出 v11 最小修正 — but don't do it now)
+
+Per-item format: 旧冻结规则 / v10 当前文本 (with file link + line) / 是否冲突 / 严重程度 / 最小修正.
+
+Let me now re-read the v10 file for exact line numbers.
+
+Actually, let me carefully plan which quotes I need:
+
+- Item 1: §10.2 Phase 1 text: "Phase 1: Exact | ActualIssue 的 rule_id + fact_id + severity 与 ExpectedIssue 完全相等" and §10.3: "consumed_indices: set[int] 记录已匹配的 ExpectedIssue 下标，不允许同一个 ExpectedIssue 被匹配两次"
+- Item 2: §11.1 field list (rule_id, severity, category, message, fact_id, source) and §11.2 identity = (rule_id, severity, category, fact_id, source)
+- Item 3: §5.1 NUMERIC_TOKEN_RE unit group `([A-Za-zμ²³]+)?`; §3.2 registry contains "N/mm²", "kN/m²", "%"
+- Item 4: §13 P0-1 "frozen_round(token_value, G3.precision) == G3.value"; §3.1 snapshot decimals-only
+- Item 5: §2.2 "为每条 Rule 判定当前用例是否适用，产出 applicable_rules: frozenset[str]"
+- Item 6: §3 "expected_evaluations: ExpectedEvaluationSnapshot"
+- Item 7: §3.2 "Unit Registry 的 hash 由 Contract 冻结，加载时做完整性校验"; §2.1 A-4 "每个 value ∈ QUANTITY_KINDS"
+- Item 8: §6.3 mapping table + §6.3 note
+- Item 9: §3.3 "本报告实际渲染过的 fact_type 快照"
+- Item 10: §4 "rendered_segments: list[str]", "structured_tables: list[TableRow]"
+
+Let me read the file now to get line numbers. I'll read it in one go (585 lines OK).
+
+After reading, compose the audit. Keep it structured and concise. Use tables where suitable. Must respond in Chinese.
+
+One more consideration on item 6 choice (list vs dict): The user says "选择一种并冻结". In the audit's 最小修正 I should give a definite recommendation. I'll recommend `dict[str, ExpectedEvaluationEntry]` keyed by evaluation_id（与 GroundTruthConclusion.required_evaluation_ids 同一 ID 域），理由：结构化查重（重复 id → precondition_error）、P0-3 按 id 查找、P0-6 covers 集合判定。 But hold on — is evaluation_id guaranteed unique across expected evaluations? required_evaluation_ids is a list with "no duplicates" check in Step 7-D validator. So dict keying is safe. OK.
+
+Also for item 1 minimal fix details:
+- 匹配粒度恢复为 (rule_id, fact_id)；severity 与 note 不参与匹配
+- Phase 1 exact: rule_id 相等 AND fact_id 相等
+- Phase 2 wildcard: ExpectedIssue.fact_id 为 None → 与同 rule_id 任一未消费 ActualIssue 匹配
+- one-to-one 双向：consumed_actual_indices（每个 ActualIssue 至多被一个 ExpectedIssue 消费）+ consumed_expected_indices（每个 ExpectedIssue 至多消费一个 ActualIssue）
+- 注意：severity 仍记录在 ActualIssue/ExpectedIssue 上用于报告分级，但不参与匹配判定
+
+Item 2 minimal fix:
+- identity tuple 恢复冻结定义: (issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate)
+- 仅保留 v10 修复: identity/issue_id 为 field(init=False)，唯一构造入口 build()
+- dataclass 公开字段相应恢复 issue_type/location/evaluation_id/occurrence_id/table_aggregate；删除 category/source 这两个替换字段
+- issue_id = SHA-256(canonical JSON of identity) 不变
+- 若确需新字段，必须先写新 Decision（07_DECISIONS.md D-0XX）——本轮不做
+
+Item 3 minimal fix:
+- unit 捕获组必须扩展为可匹配 UNIT_TO_QUANTITY 全部键的语法（含 / 与 %），例如先于单位字符集声明：unit grammar 必须按「注册表 longest-match」或扩展字符类 `([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?|%)` 实现——但不能写代码，只声明契约要求：任何 UNIT_TO_QUANTITY 中的 unit 字符串必须能被 token 单位组完整捕获
+- 反例回归表：12.5N/mm² → unit=N/mm², quantity_kind=pressure；12.5kN/m² → kN/m²/pressure；32.5% → %/ratio
+- 禁止截断匹配（N/mm² → N）
+- 具体实现建议（不写码）：unit token 识别改为「在 token 尾部对 UNIT_TO_QUANTITY 键做 longest-prefix match」或扩展 regex 字符类支持 / 和 %
+
+Hmm, for the audit I should present "真实 regex 行为" — what the current regex actually does:
+- `12.5N/mm²`: numeric body "12.5", unit group matches "N" (stops at "/") → unit="N" → force ≠ pressure → 会误判 QUANTITY_KIND_MISMATCH/UNIT_MISMATCH
+- `12.5kN/m²`: unit group matches "kN" → force ≠ pressure → 误判
+- `32.5%`: unit group 不匹配（% 不在字符类）→ unit=None → 无 quantity_kind 判定 / UNKNOWN_UNIT？Actually unit=None means no unit suffix — how does Stage D treat missing unit? If G3.unit="%" expected but token has none... The v10 doesn't define behavior for missing unit explicitly. I'll note: `% → None`，随后与 G3.unit="%" 比较失败 → 误判。
+
+Also note: `m²` and `mm²` — the char class includes ² so "m²" matches OK. "N/mm²" is the broken case.
+
+Also check "kN/m²": group matches "kN" (stops at /). Yes broken.
+
+Item 4 minimal fix:
+- P0-1 比较精度唯一来源 = FactDisplaySpecSnapshot.decimals（按锚定 fact_id 推导的 fact_type 查表）
+- G3.precision 保留为 Step 7-D 数据字段，但不参与 Step 7-E 任何比较
+- 若 snapshot 缺该 fact_type 的条目 → precondition_error（Stage A 已有 missing display spec → precondition_error，v9 冻结保持）
+
+Item 5 minimal fix:
+- Stage B 改名/改述为「Applicability Resolution（只读）」：对 7 条 P0 Rule 逐一 membership test on trusted_input.applicable_rules；not in → RuleStatus=NOT_EVALUABLE；in → 进入后续 Stage
+- Validator 不产出、不推导、不修改 applicable_rules；该集合唯一来源 = case-local trusted config
+
+Item 7 minimal fix:
+- 删除「hash 由 Contract 冻结」声明（或后续单独以 canonical serialization + 实际 hash 值补齐——本轮不做）
+- Stage A A-4 改为：加载后的 mapping 与契约内 UNIT_TO_QUANTITY 字典完全相等（键集合相等 + 每键值相等）；少一个/多一个/错一个 → precondition_error
+- value ∈ QUANTITY_KINDS 检查保留为冗余防御，但不作为充分条件
+
+Item 8 minimal fix:
+- 整体删除 §6.3 表
+- §6 保留纯文本解析职责
+- 冻结 Anchor 标识比较规则：normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
+
+Item 9 minimal fix:
+- §3.3 重述：renderable_fact_types = Template / Render Plan 声明的 allowed-to-render fact_type 集合（trusted 侧输入）
+- 明确禁止来自 SystemOutput 的 actual-rendered 集合进入 TrustedInput
+- actual-rendered 若需诊断，只能作为 SystemOutput 侧只读诊断信息，不参与判定
+
+Item 10 minimal fix:
+- rendered_segments: list[RenderedSegment]，RenderedSegment = {segment_location, text, anchors: list[AnchorDeclaration]}；AnchorDeclaration = {token, fact_id, char_start, char_end}
+- structured_tables: list[StructuredTable]，StructuredTable = {table_id, headers, rows: list[list[TableCell]]}，TableCell = {text, fact_id?}
+- 与 §8 ANCHOR.BINDING 的 BIND-1..6 对齐（char 位置用于 source 定位与 overlap 消解）
+
+Hmm wait — AnchorDeclaration char_start/char_end: are these declared by System? Fix 3 said System cannot declare TokenOccurrence — Validator tokenizes itself. But AnchorDeclaration (token→fact_id binding declaration) is different from TokenOccurrence (which tokens exist). The IR §41.2.5 R5: 校验对象是渲染产物，不是 IR 声明 — Validator tokenizes rendered text itself, and uses anchor declarations (from IR) to check binding + value equality. So AnchorDeclaration carries the *binding claim* (token string + fact_id), while Validator re-locates tokens in rendered text itself. char_start/char_end in AnchorDeclaration — hmm, would be System-claimed positions... The frozen design per user's item 10 mentions "AnchorDeclaration segment_location char_start char_end fact_id 结构一致". So the frozen schema includes these fields. Whether Validator trusts the char positions — per Fix 3 spirit, Validator re-tokenizes; declaration positions are for locating/diagnosing. I'll state the minimal fix as: schema must express RenderedSegment with AnchorDeclaration (token, fact_id, segment_location, char_start, char_end)；Validator 仍自行 tokenize（Fix 3 不变），声明位置仅用于定位与诊断，不替代自 tokenize. That keeps consistency.
+
+Item 12 READY condition check table:
+1. 原有冻结规则全部保持 → FAIL（items 1/2/4/5/8/9）
+2. v9→v10 8 个修正全部保持 → 部分保持（计数定义、duplicate 检测、candidate 反例、版本卫生保持；unit 冻结被 item 3/7 削弱、D-025 两层被 item 4 削弱、identity 修复被 item 2 削弱、renderable schema 被 item 9 削弱）
+3. 新增 tokenizer 单位反例通过 → FAIL（item 3）
+4. 无第二 truth source → FAIL（G3.precision；Stage B applicability）
+5. 无未记录的 identity/matching 语义变化 → FAIL（items 1/2）
+→ NOT READY
+
+Verdict: REGRESSION FOUND → NOT READY.
+
+Also: user said don't modify anything this round. So no file edits. Just output. Good — my todo list: this is a single deliverable (audit report). Should I use TodoWrite? The task is essentially one analysis+report; a todo list of 3+ steps could be: read v10 file, diff 12 items, produce report. Borderline. The system reminder says use todo for complex tasks 3+ steps. The audit is substantive; I'll keep it lightweight — maybe skip TodoWrite and just do it: read file, write report. Two steps. Skip todos to stay lean. Actually previous turn used todos; but this turn is a single audit deliverable. I'll skip TodoWrite (simple enough: one read + one report) — or add a small one. Guidance: skip for simple tasks. Reading one file + producing a report = simple. Skip.
+
+Let me now read the v10 file to get exact line numbers.
+
+Then compose. Response language: Chinese. Concise but complete — this needs to be thorough since it's a formal audit. Format per user: per item list 旧冻结规则 / v10 当前文本 / 是否冲突 / 严重程度 / 最小修正. A structured layout per item (maybe compact subsections or one big table). A big table with 5 columns × 10 rows would be very wide with long text; better per-item blocks with mini-fields, or a hybrid: summary table first (item, verdict, severity), then per-item detail blocks. The user explicitly demands per-item listing of those 5 fields — I'll do per-item blocks with bolded field labels, kept tight.
+
+Also I must double check item 1's claim about "此前冻结": user says frozen matching = (rule_id, fact_id), severity/note not in matching. I cannot verify from disk (v8/v9 not persisted). Per user rule 1 (自行检查确认), I should note verification limits where disk evidence is absent. But v10's own text contradicts the conversation summary too? The summary says "ExpectedIssue matching：rule-level；两阶段 exact→wildcard；consumed_indices 保证 one-to-one" — summary doesn't mention severity in matching. The user's statement is specific. Given no disk artifact, I'll trust the user's record as the frozen baseline (they're the authority on what was frozen) and note in the audit that v8/v9 text is not on disk, so the baseline is per the frozen-rule registry held by user/summary. Actually — keep it brief; a one-line method note suffices. Don't belabor.
+
+Also the user's item 1 says "不要用 consumed ExpectedIssue index 代替 consumed ActualIssue index" — v10 §10.3's consumed_indices tracks ExpectedIssue indices. So v10 protects the wrong side (or at least only one side). Finding confirmed.
+
+Now, exact line numbers — I need to read the file. Let me do that now.
+
+Also for the summary verdict, present a compact overview table first: 12 items → verdict/severity. Then details. Then READY-condition checklist. Then final: REGRESSION FOUND / NOT READY.
+
+Let me also double-check item 5 against v10 §1.3: "applicable_rule_count 仅从 TrustedInput.applicable_rules 集合大小计算，不依赖任何判定结果" — good, but §2.2 says Stage B 产出 applicable_rules. Also §1.3's set-builder: `= |{ rule : rule.rule_id ∈ trusted_input.applicable_rules }|` — fine. And §14.1 T-1 etc. fine.
+
+And §2.2 "产出 applicable_rules: frozenset[str]" — yes that's the regression.
+
+One more possible regression I noticed: v10 §10.2 Phase 1 "severity 与 ExpectedIssue 完全相等" — also §10.1 "每个 ExpectedIssue 携带 rule_id，匹配时只考虑同 rule_id 的 ActualIssue" — consistent with rule-level. Fine.
+
+Also v10 §11.1 dataclass fields include `category: str` and `source: str` — these replaced issue_type/location. And there's no evaluation_id/occurrence_id/table_aggregate fields at all. Confirmed regression.
+
+OK — read file now.
+
+Actually one subtlety about quoting: I wrote the file in the previous turn; the Read will give me line numbers. Good.
+
+For the response opening: brief intent statement (per user rule 4), then method, then verdict, then items. Keep it efficient — no fluff. The response will be long by necessity (12 items) but each item tight.
+
+Let me draft the per-item content:
+
+---
+
+**判定：REGRESSION FOUND（10/12 项发现，其中 1 项 BLOCKER）→ NOT READY**
+
+方法说明（一句话）：v8/v9 冻结规则基线来自冻结记录（会话冻结摘要 + 用户冻结登记）；v8/v9 原文未落盘，基线以登记为准。
+
+**逐项**
+
+### 1. ExpectedIssue matching 粒度 — REGRESSION（HIGH）
+- 旧冻结：matching 粒度 = (rule_id, fact_id)；severity 不参与匹配；note 不参与匹配
+- v10 文本：§10.2 Phase 1「rule_id + fact_id + severity 与 ExpectedIssue 完全相等」；§10.3「consumed_indices … 记录已匹配的 ExpectedIssue 下标」
+- 冲突：是。severity 进入匹配 → 同 (rule_id, fact_id) 但 severity 不同时误判为未命中（EXPECTED.HIT 假阴性/假阳性）；one-to-one 只保护了 ExpectedIssue 侧，ActualIssue 侧无消费保护 → 单条 ActualIssue 可被多条 ExpectedIssue 重复消费，虚增命中率
+- 严重程度：HIGH
+- 最小修正：Phase 1 恢复 (rule_id, fact_id) 相等；severity/note 仅记录不参与匹配；matching 维护 consumed_actual_indices + consumed_expected_indices 双向 one-to-one（一个 ActualIssue 至多被一个 ExpectedIssue 消费；一个 ExpectedIssue 至多消费一个 ActualIssue）
+
+### 2. ActualIssue identity 语义 — CONTRACT REGRESSION（HIGH）
+- 旧冻结：identity 语义 = (issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate)
+- v10 文本：§11.1 公开字段 category/source；§11.2 identity = (rule_id, severity, category, fact_id, source)
+- 冲突：是。issue_type→category、location→source 属语义替换；新增 rule_id/severity 进入 identity；删除 evaluation_id/occurrence_id/table_aggregate。无新 Decision 记录，属未登记的 identity 语义变更（issue_id=SHA-256(identity)，identity 变 → 全部 issue_id 基线漂移）
+- 严重程度：HIGH
+- 最小修正：identity 恢复冻结六元组；公开字段相应恢复 issue_type/location/evaluation_id/occurrence_id/table_aggregate，删除 category/source；仅保留 v10 的构造修复（identity/issue_id = field(init=False)，唯一入口 build()）；本轮不写新 ADR——若未来要改 identity，必须先落 07_DECISIONS.md
+
+### 3. Numeric Unit Grammar — REGRESSION（BLOCKER）
+- 旧冻结（由 Unit Registry 反推）：UNIT_TO_QUANTITY 中的每个 unit 字符串必须能被 token 单位组完整捕获
+- v10 文本：§5.1 单位捕获组 `([A-Za-zμ²³]+)?`；§3.2 注册表含 "N/mm²"、"kN/m²"、"%"
+- 真实 regex 行为：`/` 与 `%` 均不在字符类 → `12.5N/mm²` 捕获 unit="N"（在 `/` 截断）→ quantity_kind=force ≠ pressure → 误判；`12.5kN/m²` 捕获 "kN" → force → 误判；`32.5%` 捕获 None → 与 G3.unit="%" 比较失败 → 误判
+- 冲突：是。契约自身的注册表内容与自身 lexer 互斥（注册表 24 键中至少 3 键不可达）
+- 严重程度：BLOCKER
+- 最小修正：契约冻结「单位语法必须完整匹配注册表全部键」+ 三条反例作为回归判据（12.5N/mm²→N/mm²/pressure；12.5kN/m²→kN/m²/pressure；32.5%→%/ratio）；实现途径二选一（后续 v11 声明，本轮不定）：扩展字符类支持 `/`、`%`，或 token 尾部对注册表键做 longest-match
+
+### 4. G3.precision 第二真相源 — REGRESSION（HIGH）
+- 旧冻结：TemplateSpec.fact_display_spec[fact_type].decimals = 显示精度唯一来源；Step 7-E Snapshot 只读 decimals（D-025）
+- v10 文本：§13 P0-1「frozen_round(token_value, G3.precision) == G3.value」；同文档 §3.1 又声明 Snapshot 只读 decimals
+- 冲突：是。P0 数值比较精度来自 G3.precision，与 Snapshot.decimals 并存 = 第二真相源；v10 内部 §3.1 与 §13 自相矛盾
+- 严重程度：HIGH
+- 最小修正：P0-1 比较改为 frozen_round(token_value, snapshot.decimals)（按锚定 fact_id 的 fact_type 查 snapshot，缺失 → precondition_error）；G3.precision 保留为 Step 7-D 数据字段，不进入 Step 7-E 任何比较
+
+### 5. Stage B applicability — REGRESSION（HIGH）
+- 旧冻结：applicable_rules = case-local trusted config；Validator 不自行推导
+- v10 文本：§2.2「为每条 Rule 判定当前用例是否适用，产出 applicable_rules: frozenset[str]」
+- 冲突：是。「产出」= 第二 applicability 真相源，与 §1.3（计数只从 TrustedInput 读）矛盾
+- 严重程度：HIGH
+- 最小修正：Stage B 改为只读 membership test：rule_id ∈ trusted_input.applicable_rules → 继续；∉ → RuleStatus=NOT_EVALUABLE；Validator 不产出、不推导、不修改该集合
+
+### 6. ExpectedEvaluationSnapshot 基数 — REGRESSION（HIGH）
+- 旧冻结：LOGIC.CONSISTENCY 依据为多 Evaluation 集合结构
+- v10 文本：§3「expected_evaluations: ExpectedEvaluationSnapshot」——单数命名，且全文档未定义其内部结构
+- 冲突：是。P0-3 不可实现；多 Evaluation 支持丢失
+- 严重程度：HIGH
+- 最小修正：冻结为集合结构，选 dict：expected_evaluations: dict[str, ExpectedEvaluationEntry]，key = evaluation_id（与 GroundTruthConclusion.required_evaluation_ids 同一不透明 ID 域）；重复 id → precondition_error（Stage A）。选 dict 的理由：结构化查重 + P0-3 按 id 查找 + P0-6 covers 集合判定
+
+### 7. Unit Registry 冻结声明 — REGRESSION（MEDIUM）
+- 旧冻结：Unit Registry 内容冻结必须可校验（少/多/错 mapping 必须被发现）
+- v10 文本：§3.2「Unit Registry 的 hash 由 Contract 冻结，加载时做完整性校验」——全文无 hash 值；§2.1 A-4 仅查「每个 value ∈ QUANTITY_KINDS」
+- 冲突：是。未兑现的冻结声明；A-4 无法发现少一个 unit、多一个 unit、错一个 mapping
+- 严重程度：MEDIUM
+- 最小修正：删除 hash 声明；A-4 改为 mapping 与契约内 UNIT_TO_QUANTITY 完全相等（键集合相等 + 逐键值相等）→ 不等即 precondition_error；value ∈ QUANTITY_KINDS 降为冗余防御
+
+### 8. Identifier scope mapping — REGRESSION（MEDIUM）
+- 旧冻结：Step 7-E 只做 text identifier parsing，不做 identifier → scope_class 推断；Anchor 标识比较 = normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
+- v10 文本：§6.3 整张映射表（ST→point/sample、K/C→component、M→material、P→point、S→sample/defect、B→building、D→defect）+「映射是'可能'关系」注
+- 冲突：是。被删除的 scope 推断表被重新引入（即使带 hedge 也不允许）
+- 严重程度：MEDIUM
+- 最小修正：整表删除；§6 收敛为纯文本解析；冻结 Anchor 标识比较规则（normalized_identifier == instance_key）
+
+### 9. renderable_fact_types 语义 — REGRESSION（HIGH）
+- 旧冻结：renderable_fact_types = Template / Render Plan → allowed-to-render 集合（trusted 侧）
+- v10 文本：§3.3「本报告实际渲染过的 fact_type 快照」
+- 冲突：是。actual-rendered 来自 System Output，不能成为 TrustedInput 来源——语义从 allowed-to-render 漂移为 actual-rendered
+- 严重程度：HIGH
+- 最小修正：重述为 allowed-to-render fact_type 集合（来自 Template/Render Plan，随 trusted 配置加载）；明确 actual-rendered 只能作为 SystemOutput 侧诊断信息，不参与判定
+
+### 10. SystemOutput schema 表达力 — REGRESSION（HIGH）
+- 旧冻结：SystemOutput 必须能表达 RenderedSegment（segment_location + text + AnchorDeclaration{token, fact_id, char_start, char_end}）与结构化表格（StructuredTable/TableCell）
+- v10 文本：§4「rendered_segments: list[str]」「structured_tables: list[TableRow]」——TableRow/TableCell/StructuredTable/AnchorDeclaration 全部未定义
+- 冲突：是。list[str] 无法携带 AnchorDeclaration 与 char 定位 → §8 ANCHOR.BINDING（BIND-4/5/6、Stage E 级联）不可实现；§11 示例 source="rendered_segments[2]:char[15-20]" 隐含位置信息存在，与 list[str] 自相矛盾
+- 严重程度：HIGH
+- 最小修正：rendered_segments: list[RenderedSegment]；RenderedSegment = {segment_location, text, anchors: list[AnchorDeclaration]}；AnchorDeclaration = {token, fact_id, char_start, char_end}；structured_tables: list[StructuredTable] = {table_id, headers, rows: list[list[TableCell]]}，TableCell = {text, fact_id?}；Fix 3 不变——Validator 仍自行 tokenize，声明位置仅用于定位与诊断
+
+### 11. 输出格式 — 已执行
+本轮输出即按 REGRESSION FOUND + 逐项五字段格式。
+
+### 12. READY 条件核对
+
+| 条件 | 结果 |
+| ---- | ---- |
+| 原有冻结规则全部保持 | ✗（项 1/2/4/5/8/9） |
+| v9→v10 的 8 个修正全部保持 | ✗（3/8 项被削弱：unit 冻结被项 3/7 削弱、D-025 两层被项 4 削弱、identity 构造修复被项 2 部分抵消、renderable schema 被项 9 削弱；计数定义/重复检测/candidate 反例/版本卫生 4 项保持） |
+| 新增 tokenizer 单位反例通过 | ✗（项 3，BLOCKER） |
+| 无第二 truth source | ✗（G3.precision；Stage B 产出 applicable_rules） |
+| 无未记录的 identity / matching 语义变化 | ✗（项 1/2） |
+
+**最终判定：REGRESSION FOUND → NOT READY**
+
+下一步（待确认后执行，本轮不做）：按最小修正清单产出 v11（单一 truth source 修复轮），并补落 07_DECISIONS.md 一条「ActualIssue identity 语义恢复」登记（因为 v10 已经漂移，需要一条决策记录把恢复动作登记在案）。
+
+Hmm wait — user said don't create v11 this round. The "下一步" mention is fine as a proposal, clearly marked as not executed.
+
+Also should I mention adding a D-028? That's a suggestion for next round. Keep brief.
+
+Now let me read the file for exact line numbers. Sections in my written file — let me estimate from the Write content... I'll just read it.
+
+One more thing: the response must include clickable file links per code reference guidelines. I'll link to the v10 file with line anchors.
+
+Let me read the file now.
+
+Now I have the full v10 text with line numbers. Let me compose the audit report.
+
+Audit findings with exact line references:
+
+1. ExpectedIssue matching: L395 (Phase 1: rule_id + fact_id + severity), L400 (consumed_indices = ExpectedIssue 下标)
+2. ActualIssue identity: L412-417 (fields category/source), L443 (identity tuple), L467 (tuple order)
+3. Unit regex: L264 (`([A-Za-zμ²³]+)?`), L190-191 (N/mm², kN/m²), L214 (%)
+4. G3.precision: L518 (P0-1), vs L167-174 (§3.1)
+5. Stage B: L125-127 (产出 applicable_rules), vs L66/L150
+6. ExpectedEvaluationSnapshot: L151 (singular, undefined structure)
+7. Unit registry hash: L221 (hash claim, no value), L116 (A-4 only value ∈ QUANTITY_KINDS)
+8. Scope mapping: L314-326 (§6.3 table)
+9. renderable_fact_types: L235 ("本报告实际渲染过的 fact_type 快照")
+10. SystemOutput: L247 (list[str]), L248 (list[TableRow])
+
+Baseline note: v8/v9 原文未落盘，冻结基线依据冻结登记（用户冻结规则清单 + 会话冻结摘要）。
+
+Structure my response:
+- 意图确认 (1 line)
+- 审计基线说明 (1-2 lines)
+- 总判定: REGRESSION FOUND
+- 概览表 (12 items, verdict, severity)
+- 逐项详情 (10 items with 5 fields each)
+- READY 条件核对表
+- 最终判定 NOT READY
+
+Keep each item tight. Use file links with line anchors.
+## 意图确认
+
+本轮任务：对 [Step_7_E_Coding_Contract_v10.md](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md) 做**冻结契约回归审计**——v8/v9 冻结规则 → v10 实际文本 → 逐项差分，找出旧规则回退 / 新真相源 / 语义漂移。只审计，不写代码、不建 v11、不宣布 READY。
+
+**审计基线说明**：v8/v9 契约原文未落盘（磁盘无该文件），冻结基线以冻结登记（用户冻结规则清单 + 会话冻结记录）为准。
+
+---
+
+# 审计判定：REGRESSION FOUND
+
+12 项审计中 **10 项发现问题**（1 BLOCKER + 6 HIGH + 3 MEDIUM），涉及 6 项旧冻结规则回退、3 处第二真相源、2 处未登记语义变更。
+
+## 概览
+
+| # | 审计项 | 判定 | 严重程度 |
+| ---- | ---- | ---- | ---- |
+| 1 | ExpectedIssue matching 粒度 | **REGRESSION** | HIGH |
+| 2 | ActualIssue identity 语义 | **CONTRACT REGRESSION** | HIGH |
+| 3 | Numeric Unit Grammar | **REGRESSION** | **BLOCKER** |
+| 4 | G3.precision 第二真相源 | **REGRESSION** | HIGH |
+| 5 | Stage B applicability | **REGRESSION** | HIGH |
+| 6 | ExpectedEvaluationSnapshot 基数 | **REGRESSION** | HIGH |
+| 7 | Unit Registry 冻结声明 | **REGRESSION** | MEDIUM |
+| 8 | Identifier scope mapping | **REGRESSION** | MEDIUM |
+| 9 | renderable_fact_types 语义 | **REGRESSION** | HIGH |
+| 10 | SystemOutput schema 表达力 | **REGRESSION** | HIGH |
+| 11 | 审计输出格式 | 已按本格式执行 | — |
+| 12 | READY 条件 | **不满足** → NOT READY | — |
+
+---
+
+## 逐项审计
+
+### 1. ExpectedIssue matching 粒度 — REGRESSION（HIGH）
+
+- **旧冻结规则**：matching 粒度 = `(rule_id, fact_id)`；severity 不参与匹配；note 不参与匹配
+- **v10 当前文本**：[§10.2 L395](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L395)「ActualIssue 的 rule_id + **fact_id + severity** 与 ExpectedIssue 完全相等」；[§10.3 L400](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L400)「consumed_indices … 记录已匹配的 **ExpectedIssue** 下标」
+- **是否冲突**：**是**。两处冲突：
+  1. severity 进入匹配 → 同 `(rule_id, fact_id)` 但 severity 不同时判为未命中，EXPECTED.HIT 产生假阴性（ExpectedIssue severity=error、系统产物 severity=warning 时）
+  2. one-to-one 只保护了 ExpectedIssue 侧（ExpectedIssue 不被消费两次），**ActualIssue 侧无消费保护** → 单条 ActualIssue 可被多条 ExpectedIssue 重复消费，虚增命中率
+- **严重程度**：HIGH
+- **最小修正**：Phase 1 恢复 `(rule_id, fact_id)` 相等判定；severity / note 仅记录、不参与匹配；matching 维护**双向**消费集合——`consumed_actual_indices`（一个 ActualIssue 至多被一个 ExpectedIssue 消费）+ `consumed_expected_indices`（一个 ExpectedIssue 至多消费一个 ActualIssue）
+
+### 2. ActualIssue identity 语义 — CONTRACT REGRESSION（HIGH）
+
+- **旧冻结规则**：identity 语义 = `(issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate)`，不得擅自变更
+- **v10 当前文本**：[§11.1 L412-417](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L412-L417) 公开字段为 `category` / `source`；[§11.2 L443](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L443) `identity = (rule_id, severity, category, fact_id, source)`
+- **是否冲突**：**是，CONTRACT REGRESSION**。逐字段差分：
+  - `issue_type` → 被替换为 `category`（语义漂移）
+  - `location` → 被替换为 `source`（语义漂移）
+  - `evaluation_id` / `occurrence_id` / `table_aggregate` → **被删除**
+  - `rule_id` / `severity` → **被新增**进 identity
+  - 全程无新 ADR / Decision 登记。因 `issue_id = SHA-256(identity)`，identity 变更即全部 issue_id 基线漂移，回归比对失效
+- **严重程度**：HIGH
+- **最小修正**：identity 恢复冻结六元组 `(issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate)`；公开字段相应恢复，删除 `category` / `source`；**仅保留** v10 的构造修复（`identity` / `issue_id` = `field(init=False)`，唯一入口 `build()`）；未来若确需改 identity，必须先落 `07_DECISIONS.md` 新决策，本轮不做
+
+### 3. Numeric Unit Grammar — REGRESSION（BLOCKER）
+
+- **旧冻结规则**：Unit Registry 冻结的每个 unit 字符串必须能被 token 单位组**完整捕获**（注册表与 lexer 自洽）
+- **v10 当前文本**：[§5.1 L264](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L264) 单位捕获组 `([A-Za-zμ²³]+)?`；[§3.2 L190-191、L214](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L190-L191) 注册表含 `"N/mm²"`、`"kN/m²"`、`"%"`
+- **真实 regex 行为**（逐反例验证）：
+
+| 输入 | v10 实际捕获 | v10 实际 quantity_kind | 冻结要求 |
+| ---- | ---- | ---- | ---- |
+| `12.5N/mm²` | unit=`N`（`/` 不在字符类，截断） | `force` ≠ pressure → **误判** | unit=`N/mm²`，`pressure` |
+| `12.5kN/m²` | unit=`kN`（同上截断） | `force` ≠ pressure → **误判** | unit=`kN/m²`，`pressure` |
+| `32.5%` | unit=`None`（`%` 不在字符类） | 无判定 → **误判** | unit=`%`，`ratio` |
+
+- **是否冲突**：**是**。契约自身注册表 24 键中至少 3 键对自身 lexer 不可达——注册表内容冻结与词法层互斥，ANCHOR.BINDING 对压力/百分比类数值必然误判
+- **严重程度**：**BLOCKER**
+- **最小修正**：契约新增单位语法冻结条款——单位组必须完整匹配 `UNIT_TO_QUANTITY` 全部键（含 `/` 与 `%`），并以三条反例作为回归判据（`12.5N/mm² → N/mm²/pressure`；`12.5kN/m² → kN/m²/pressure`；`32.5% → %/ratio`）；禁止截断捕获（`N/mm² → N`）。实现途径二选一在下一版声明：扩展字符类支持 `/`、`%`，或 token 尾部对注册表键做 longest-match
+
+### 4. G3.precision 第二真相源 — REGRESSION（HIGH）
+
+- **旧冻结规则**：`TemplateSpec.fact_display_spec[fact_type].decimals` = 显示精度**唯一**来源；Step 7-E Snapshot 只读 decimals（D-025）
+- **v10 当前文本**：[§13 L518](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L518) P0-1 核心判定「frozen_round(token_value, **G3.precision**) == G3.value」；同文档 [§3.1 L167-174](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L167-L174) 又声明 Snapshot 只读 decimals
+- **是否冲突**：**是**。P0 数值比较精度来自 G3.precision，与 Snapshot.decimals 并存 = **第二真相源**；v10 内部 §3.1 与 §13 自相矛盾（§3.1 修复被 §13 悄悄绕过）
+- **严重程度**：HIGH
+- **最小修正**：P0-1 比较改为 `frozen_round(token_value, snapshot.decimals)`（按锚定 fact_id 推导 fact_type 查 Snapshot；缺失条目 → precondition_error，沿用 v9 冻结的 missing display spec 语义）；G3.precision 保留为 Step 7-D 数据字段，不进入 Step 7-E 任何比较
+
+### 5. Stage B applicability — REGRESSION（HIGH）
+
+- **旧冻结规则**：`applicable_rules` = case-local trusted config；Validator 不自行推导 applicability
+- **v10 当前文本**：[§2.2 L127](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L127)「为每条 Rule 判定当前用例是否适用，**产出** `applicable_rules: frozenset[str]`」
+- **是否冲突**：**是**。「产出」= Validator 定义了第二 applicability 真相源，与 [§1.3 L66](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L66)（计数只从 TrustedInput 读）和 [§3 L150](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L150)（applicable_rules 从 applicable_rules.json 加载）矛盾
+- **严重程度**：HIGH
+- **最小修正**：Stage B 改为**只读 membership test**：`rule_id ∈ trusted_input.applicable_rules` → 继续；`∉` → RuleStatus = NOT_EVALUABLE。Validator 不产出、不推导、不修改该集合；Stage B 更名为「Applicability Resolution（只读）」
+
+### 6. ExpectedEvaluationSnapshot 基数 — REGRESSION（HIGH）
+
+- **旧冻结规则**：LOGIC.CONSISTENCY 依据为**多 Evaluation** 集合结构
+- **v10 当前文本**：[§3 L151](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L151) `expected_evaluations: ExpectedEvaluationSnapshot`——单数命名，且**全文档未定义其内部结构**（无字段、无基数）
+- **是否冲突**：**是**。多 Evaluation 支持丢失，P0-3 不可实现
+- **严重程度**：HIGH
+- **最小修正**：冻结为集合结构，选 **dict**：`expected_evaluations: dict[str, ExpectedEvaluationEntry]`，key = `evaluation_id`（与 `GroundTruthConclusion.required_evaluation_ids` 同一不透明 ID 域）；重复 id → Stage A precondition_error。选 dict 理由：结构化查重 + P0-3 按 id 查找 + P0-6 covers 集合判定
+
+### 7. Unit Registry 冻结声明 — REGRESSION（MEDIUM）
+
+- **旧冻结规则**：Unit Registry「冻结」必须可校验——少一个 unit、多一个 unit、错一个 mapping 都必须被发现
+- **v10 当前文本**：[§3.2 L221](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L221)「Unit Registry 的 **hash 由 Contract 冻结**，加载时做完整性校验」——**全文无任何 hash 值**；[§2.1 A-4 L116](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L116) 仅检查「每个 value ∈ QUANTITY_KINDS」
+- **是否冲突**：**是**。未兑现的冻结声明（宣称冻结 hash 但没给值）；A-4 无法发现缺键、多键、错 mapping（例如加载方少一个 `"Hz"` 或把 `"m"` 映到 `"area"` 都能通过 A-4）
+- **严重程度**：MEDIUM
+- **最小修正**：删除「hash 由 Contract 冻结」声明；A-4 改为**完全相等检查**：加载后的 mapping 与契约内 `UNIT_TO_QUANTITY` 字典逐键逐值相等，不等即 precondition_error；`value ∈ QUANTITY_KINDS` 降为冗余防御（非充分条件）
+
+### 8. Identifier scope mapping — REGRESSION（MEDIUM）
+
+- **旧冻结规则**：Step 7-E Identifier 解析只做 text identifier parsing，**不做 identifier → scope_class 推断**；Anchor 标识只比较 `normalized_identifier == parse_fact_id(anchor.fact_id).instance_key`
+- **v10 当前文本**：[§6.3 L314-326](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L314-L326) 整张映射表重新出现（ST→point/sample、K/C→component、M→material、P→point、S→sample/defect、B→building、D→defect），仅以「映射是‘可能’关系」注脚弱化
+- **是否冲突**：**是**。已删除的 scope 推断表被重新引入——即使带 hedge，也构成第二条类型推断路径，与「Anchor 只比较 instance_key」的冻结比较规则冲突
+- **严重程度**：MEDIUM
+- **最小修正**：**整表删除** §6.3；§6 收敛为纯文本解析职责；冻结 Anchor 标识比较规则：`normalized_identifier == parse_fact_id(anchor.fact_id).instance_key`
+
+### 9. renderable_fact_types 语义 — REGRESSION（HIGH）
+
+- **旧冻结规则**：语义 = Template / Render Plan → **allowed-to-render** fact_type 集合（trusted 侧输入）
+- **v10 当前文本**：[§3.3 L235](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L235)「本报告**实际渲染过的** fact_type 快照」
+- **是否冲突**：**是**。allowed-to-render（trusted 侧声明）被偷换为 actual-rendered（System Output 侧事实）——System 产物不能成为 TrustedInput 来源，否则 Validator 输入被被测对象污染
+- **严重程度**：HIGH
+- **最小修正**：§3.3 重述为 allowed-to-render fact_type 集合（来自 Template / Render Plan，随 trusted 配置加载）；明确 actual-rendered 只能作为 SystemOutput 侧只读诊断信息，不参与任何判定
+
+### 10. SystemOutput schema 表达力 — REGRESSION（HIGH）
+
+- **旧冻结规则**：SystemOutput 必须能表达 RenderedSegment（segment_location + text + AnchorDeclaration{token, fact_id, char_start, char_end}）与结构化表格（StructuredTable / TableCell）
+- **v10 当前文本**：[§4 L247](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L247) `rendered_segments: list[str]`；[L248](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L248) `structured_tables: list[TableRow]`——TableRow / TableCell / StructuredTable / AnchorDeclaration 全部未定义
+- **是否冲突**：**是**。三处自相矛盾：
+  1. `list[str]` 无法携带 AnchorDeclaration 与 char 定位 → §8 ANCHOR.BINDING 的 BIND-4/5/6 与 Stage E 级联判定不可实现
+  2. [§11.4 L487](file:///g:/workspace/zixun4/docs/Step_7_E_Coding_Contract_v10.md#L487) 示例 `source="rendered_segments[2]:char[15-20]"` 隐含位置结构存在，与 `list[str]` 矛盾
+  3. `TableRow` 无定义 → P0-2 TABLE.INTERNAL 无输入结构
+- **严重程度**：HIGH
+- **最小修正**：`rendered_segments: list[RenderedSegment]`，`RenderedSegment = {segment_location, text, anchors: list[AnchorDeclaration]}`，`AnchorDeclaration = {token, fact_id, char_start, char_end}`；`structured_tables: list[StructuredTable] = {table_id, headers, rows: list[list[TableCell]]}`，`TableCell = {text, fact_id?}`；Fix 3 不变——Validator 仍自行 tokenize，声明位置仅用于定位与诊断
+
+### 11. 审计输出格式 — 已执行
+
+本轮输出即按「REGRESSION FOUND / 逐项五字段（旧冻结规则 → v10 文本 → 冲突 → 严重程度 → 最小修正）」格式，未输出「全部 ✅ / READY」。
+
+---
+
+## 12. READY 条件核对
+
+| # | READY 条件 | 结果 | 依据 |
+| ---- | ---- | ---- | ---- |
+| 1 | 原有冻结规则全部保持 | **✗ FAIL** | 项 1/2/4/5/8/9 共 6 项回退 |
+| 2 | v9→v10 的 8 个修正全部保持 | **✗ 部分失效** | 保持 4 项（计数定义 §1.3 / 重复检测 §2.1 A-2、§9.1 / tokenizer candidate §5.3 / 版本卫生）；被削弱 4 项（unit 冻结被项 3/7 削弱、D-025 两层被项 4 削弱、identity 构造修复被项 2 部分抵消、renderable schema 被项 9 削弱） |
+| 3 | 新增 tokenizer 单位反例通过 | **✗ FAIL** | 项 3：`N/mm²`/`kN/m²`/`%` 三反例全部失败（BLOCKER） |
+| 4 | 无第二 truth source | **✗ FAIL** | G3.precision（项 4）；Stage B 产出 applicable_rules（项 5） |
+| 5 | 无未记录的 identity / matching 语义变化 | **✗ FAIL** | identity 六元组被静默替换（项 2）；matching 粒度加入 severity（项 1） |
+
+---
+
+# 最终判定
+
+> **REGRESSION FOUND → Step 7-E Coding Contract v10 = NOT READY**
+
+v10 在修复 8 项闭环的过程中，引入了 **1 项 BLOCKER**（单位语法与自身注册表互斥）、**6 项旧冻结规则回退**（matching 粒度、identity 六元组、precision 唯一真相源、applicability 只读性、scope 推断表、renderable 语义）、**3 处内部自相矛盾**（§3.1 vs §13、§1.3 vs §2.2、§11.4 vs §4）。
+
+**下一步（待确认，本轮不执行）**：按上述 10 项最小修正产出 v11 修复轮；其中 identity 语义恢复建议同步在 `07_DECISIONS.md` 补一条登记（记录 v10 漂移事实与恢复动作），保持决策链完整。
