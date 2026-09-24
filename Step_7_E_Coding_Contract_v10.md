@@ -27,6 +27,7 @@
 > | R14 | B2 修复：frozen_round 异常行为与契约一致（补齐检查，数学语义零改动） | §12 |
 > | R15 | B3 修复：ActualIssue build-only 守卫（__post_init__ + object.__new__ build） | §11 |
 > | R16 | 旧契约遗漏恢复：applicable_rules ⊆ P0_RULE_IDS（A-11；未知 Rule → precondition_error） | §2.1 / §2.2 / §13 / §0 |
+> | R17 | B4 修复：numeric token → fact_id 显式绑定闭环（BIND-8 + §8.2 正式绑定与判定链 + INV-24 + T-18） | §8.1 / §8.2 / §0 / §14 |
 
 ---
 
@@ -59,6 +60,7 @@
 | INV-21 | renderable_fact_types = allowed-to-render（trusted 侧）；actual-rendered 不进入 TrustedInput | 冻结恢复 R9 |
 | INV-22 | Anchor 标识比较 = normalized_identifier == parse_fact_id(anchor.fact_id).instance_key；禁止 scope_class 推断 | 冻结恢复 R8 |
 | INV-23 | trusted_input.applicable_rules ⊆ P0_RULE_IDS（§13）；未知 / 非 7 P0 rule_id → precondition_error；不静默删除、不自动补入、不修改 trusted_input | 本轮恢复 R16 |
+| INV-24 | 每个非 whitelist 豁免 numeric token 必须被唯一 AnchorDeclaration 绑定到合法 fact_id（BIND-8）；§8.2 比较链（token → fact_id → G3 → snapshot.decimals → P0-1）缺环即 FAIL / precondition_error | 本轮恢复 R17（04_REPORT_IR §41.2.2 / R2） |
 
 ---
 
@@ -527,14 +529,35 @@ normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
 | BIND-5 | 每个 AnchorDeclaration.fact_id 通过 `cdm.id.is_valid_fact_id()`（INV-11） | `ANCHOR.INVALID_FACT_ID` |
 | BIND-6 | 同一 token 不出现多处绑定声明 | `ANCHOR.DUPLICATE_BINDING` |
 | BIND-7 | 每个 identifier token 必须被至少一个 AnchorDeclaration 覆盖（token span 包含于声明 token span 或文本相等），且 `normalized_identifier == parse_fact_id(fact_id).instance_key`（§6.3） | 未覆盖 → `ANCHOR.UNANCHORED`；instance_key 不等 → `ANCHOR.IDENTIFIER_BINDING_MISMATCH` |
+| BIND-8 | 每一个未经 whitelist 豁免的 numeric token 必须被至少一个 AnchorDeclaration 覆盖（span 规则同 BIND-7），且覆盖声明提供合法 fact_id（BIND-5）；同一 numeric token 不允许存在多个不同 fact_id 的绑定（多重声明按 BIND-6） | 未覆盖 → `ANCHOR.UNANCHORED`；fact_id 非法 → `ANCHOR.INVALID_FACT_ID`；多个不同 fact_id → `ANCHOR.DUPLICATE_BINDING` |
 
 说明：
 - BIND-7 恢复 04_REPORT_IR §41.2.3 / D-018 的「实例标识 token 同表绑定」冻结要求（v10 P0-4 核心判定中的「标识同表绑定」在 Stage D 无对应检查项，本条补齐）
 - 被 whitelist span 完全包含的 identifier token 豁免 BIND-7（§8.4）
+- BIND-8 恢复 04_REPORT_IR §41.2.2 / R2 的冻结要求（「每一个数字 token 都必须显式绑定到一个 fact_id」）——修复「numeric token → fact_id 无正式来源」的可执行性缺口（B4）；仍属 P0-4 ANCHOR.BINDING，不新增 P0 Rule
+- BIND-8 与 BIND-7 使用同一冻结 span 规则；部分重叠（相交但不包含）**不算覆盖**
+- BIND-8 作用域 = Validator 对 rendered_segments（prose / 图注）tokenize 出的 numeric token；structured_tables 单元格 numeric token 的逐 token 绑定机制为已登记候选（结尾扫描第 6 项），本轮不设计
+- 由此 §8.2 比较链获得正式输入：token → 唯一 fact_id → G3
 
-### 8.2 Stage E 级联 unit 判定（冻结）
+### 8.2 Stage E：Numeric Token 绑定与判定链（B4 修复，正式闭环）
 
-对每个数值 token（未经 whitelist 豁免），按以下优先级与 GroundTruthFact 比较：
+对每个**未经 whitelist 豁免**的 numeric token（BIND-8 已保证唯一有效绑定）：
+
+```
+numeric token
+    ↓ 唯一 AnchorDeclaration（BIND-8：span 覆盖 + 唯一 fact_id）
+fact_id
+    ├─→ G3 查找（case.ground_truth.facts 按 fact_id）
+    │       缺 → FAIL（ANCHOR.INVALID_FACT_ID：绑定目标不存在于用例）
+    └─→ parse_fact_id() → derive_fact_type() → fact_type
+            ↓ fact_display_spec[fact_type]
+            │       缺条目 → precondition_error（missing display spec，v9 冻结保持）
+        FactDisplaySpecSnapshot.decimals
+            ↓
+        frozen_round(token_value, decimals) == G3.value   （P0-1 VALUE.CONSISTENCY）
+```
+
+Unit 级联（与上述链并行执行，按优先级与 G3 比较）：
 
 | 优先级 | 条件 | 结果 | 错误码 |
 | ---- | ---- | ---- | ---- |
@@ -543,7 +566,11 @@ normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
 | 3 | token quantity_kind = G3.quantity_kind 但单位字符串不同 | FAIL | `ANCHOR.UNIT_MISMATCH` |
 | 4 | token.parsed_unit == G3.unit | PASS | — |
 
-注：`quantity_kind` 由 token 的单位后缀通过 `UNIT_TO_QUANTITY` 查表得到。
+注：
+- `quantity_kind` 由 token 的单位后缀通过 `UNIT_TO_QUANTITY` 查表得到
+- **缺任一环 → FAIL / precondition_error**；错误码均属现有 ANCHOR.* 体系，不新增 P0 Rule
+- `ANCHOR.INVALID_FACT_ID` 两级定义：① `is_valid_fact_id()` 失败（语法，Stage D / BIND-5）；② fact_id ∉ 当前用例 GroundTruthFact 集合（绑定目标不存在，Stage E 链）
+- 本节不改变 P0-1 比较语义（R4：精度唯一来源 = snapshot.decimals；G3.precision 不参与）
 
 ### 8.3 区间（range）token（R11 补回冻结）
 
@@ -878,6 +905,7 @@ decimals
 | T-15 | frozen_round 异常（B2） | frozen_round(None, 2) → ValueError；frozen_round(float("nan"), 2) → ValueError；frozen_round(float("inf"), 2) → ValueError（-Inf 同）；frozen_round(1.2, -1) → TypeError；frozen_round(2.345, 2) → 2.35 |
 | T-16 | Unit 完整 token 边界（B1） | 32.4m3 → unit=`m3` → UNKNOWN_UNIT；32.4N/mm2 → unit=`N/mm2` → UNKNOWN_UNIT；12.5N/mm²x → unit=`N/mm²x` → UNKNOWN_UNIT；三者均不得截断、不得 unit=None、不得被 lookahead 吞掉 numeric token |
 | T-17 | applicable_rules ⊆ P0_RULE_IDS（R16） | applicable_rules 含未知 rule_id（如 "NOT_A_P0"）→ precondition_error；不被计入 applicable_rule_count；不被静默删除；trusted_input.applicable_rules 不被修改 |
+| T-18 | Numeric Binding（B4） | Case A：numeric token 有合法 fact_id → 正常进入 P0-1 比对；Case B：无 AnchorDeclaration → ANCHOR.UNANCHORED → FAIL；Case C：AnchorDeclaration.fact_id 非法 → ANCHOR.INVALID_FACT_ID → FAIL；Case D：同一 numeric token 同时绑定两个不同 fact_id → ANCHOR.DUPLICATE_BINDING → FAIL；Case E：numeric token 完全处于 whitelist span → 豁免 numeric binding；Case F：token 与 AnchorDeclaration 仅部分重叠 → 不算绑定（span 规则）→ UNANCHORED；Case G：已绑定但 token value 与 G3 按 snapshot.decimals 不相等 → 走 P0-1 → FAIL |
 
 ### 14.2 实现阶段划分
 
@@ -919,7 +947,7 @@ Phase 5: 状态机（accuracy_validator.py）
 
 补充恢复：range 逐 token 锚定（§8.3）、whitelist span containment（§8.4）、§5.3 / §6.2 candidate 对齐、BIND-7 标识同表绑定。
 
-**执行层阻塞项闭合（B1–B3，本轮）**：
+**执行层阻塞项闭合（B1–B3）**：
 
 | # | 阻塞项 | 修复位置 | 状态 |
 | ---- | ---- | ---- | ---- |
@@ -927,13 +955,19 @@ Phase 5: 状态机（accuracy_validator.py）
 | B2 | frozen_round 行为一致性 | §12（异常检查补齐，数学语义零改动） | ✅ 闭合 |
 | B3 | ActualIssue build-only | §11（__post_init__ 守卫 + object.__new__ build） | ✅ 闭合 |
 
+**数字绑定闭环（B4，本轮）**：
+
+| # | 阻塞项 | 修复位置 | 状态 |
+| ---- | ---- | ---- | ---- |
+| B4 | Numeric Token → fact_id 显式绑定缺失 | §8.1 BIND-8 / §8.2 正式绑定与判定链 / INV-24 / T-18 | ✅ 闭合 |
+
 **旧契约遗漏恢复与扫描（本轮）**：
 
 | 项 | 内容 | 位置 | 状态 |
 | ---- | ---- | ---- | ---- |
 | R16 | applicable_rules ⊆ P0_RULE_IDS；未知 / 非 7 P0 rule_id → precondition_error；不静默删除、不自动补入、不修改 trusted_input | §2.1 A-11 / §2.2 / §13 / INV-23 / T-17 | ✅ 闭合 |
 
-旧契约遗漏扫描（5 项）：v8/v9 契约原文未落盘，以下各项无法从磁盘证据确证为**确定性回归**，按本轮指令一律标记 **REGRESSION CANDIDATE**、不直接修改；待冻结登记确认——确认任一成立（确为既有冻结规则且无明确替代）即回退 NOT READY 并在下轮恢复：
+旧契约遗漏扫描（5 项）+ B4 轮新增候选（第 6 项）：以下各项无法从磁盘证据确证为**确定性回归 / 确定性冲突**，一律标记 **REGRESSION CANDIDATE / EXECUTABILITY CANDIDATE**、不直接修改（第 6 项按 B4 轮指令明确不重新设计 TableCell）；待冻结登记确认——确认任一成立即回退 NOT READY 并在下轮恢复：
 
 | # | 扫描项 | 是否为既有冻结规则 | v10 当前状态 | 是否确定回归 | 是否修改 | 最终结论 |
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
@@ -942,23 +976,30 @@ Phase 5: 状态机（accuracy_validator.py）
 | 3 | TrustedTableSpec precondition | 指认为既有约束；无法独立证实 | trusted_table_specs 出现在 TrustedInput 但 TableSpecSnapshot 类型未定义；Stage A 无对应检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认；另注：类型未定义本身构成 P0-2 可执行性缺口（与 B 轮 SystemOutput 同类），确认后一并处理 |
 | 4 | renderable_fact_types ⊆ fact_display_spec.keys() | 指认为既有约束；无法独立证实 | 存在**部分替代**：A-9（元素 ∈ CDM fact_type 注册表）+ P0-1 惰性检查（snapshot 缺条目 → precondition_error，标注 v9 冻结保持） | 否——REGRESSION CANDIDATE（部分覆盖 ≠ 明确替代） | 否 | 待确认；若确认，需先裁决「Stage A 集合级校验」与「惰性检查」的替代关系 |
 | 5 | G3.unit ∈ UNIT_TO_QUANTITY（或 None）合法性 | 指认为既有约束；无法独立证实（Step 7-D validate_ground_truth_fact 亦不检查 unit） | A-8 仅校验 fact_id 格式；G3.unit 无注册表合法性检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认 |
+| 6 | TABLE-NUMERIC-BINDING（TableCell 级 numeric token 逐 token 绑定） | 04_REPORT_IR §41.2.1 明确将 Table 单元格 / 表标题 / 表注纳入锚定范围（冻结依据明确） | TableCell.fact_id 为 cell 级单值：单 numeric token 的 cell 可绑定；一个 cell 含多个 numeric token（尤其各属不同 fact）时无法逐 token 绑定（B4 仅闭环 rendered_segments 侧，§8.1 BIND-8 作用域注明） | 否——REGRESSION CANDIDATE / EXECUTABILITY CANDIDATE | 否（B4 轮指令：不重新设计 TableCell） | 待裁决；若确认需逐 token 绑定 → 下轮以最小扩展恢复（cell 内 token 级绑定表达），本轮不擅自设计 |
 
-**内部交叉检查（B1–B3 修复轮，零新冲突）**：
+**内部交叉检查（B1–B3 + B4 修复轮，零新冲突）**：
 
 | 检查项 | 结果 | 位置 |
 | ---- | ---- | ---- |
-| 7 P0 完全不变 | ✅ | §13（7 条未增删） |
+| 7 P0 完全不变 | ✅ | §13（7 条未增删；B4 仅补 BIND-8，仍属 P0-4） |
 | Step 7-D 完全未修改 | ✅ | 本轮零改动（仅契约文档） |
-| ActualIssue 六元 identity 完全不变 | ✅ | §11.1（B3 仅改构造机制） |
-| ExpectedIssue matching 仍为 (rule_id, fact_id) | ✅ | §10.1 |
-| applicable_rules 仍只来自 TrustedInput | ✅ | §2.2 |
-| renderable_fact_types 仍为 allowed-to-render | ✅ | §3.3 |
-| precision 唯一来源仍为 Snapshot.decimals | ✅ | §13 |
-| UNIT_TO_QUANTITY 仍 exact equality | ✅ | §2.1 A-4 |
-| identifier 仍禁止 scope_class 推断 | ✅ | §6.3 |
-| range / whitelist span containment 保持 | ✅ | §8.3 / §8.4 |
-| ST001 / S-3 行为保持 | ✅ | §5.3（B1 仅改单位组，标识 regex 未动） |
-| ±3.2MPa / ± 3.2MPa 保持 | ✅ | §5.1 `(±\s*)?` + BIND-2（B1 未动 ± 组） |
+| ActualIssue 六元 identity 完全不变 | ✅ | §11.1（B3 仅改构造机制；B4 未触碰） |
+| ExpectedIssue matching 仍为 (rule_id, fact_id) | ✅ | §10.1（B4 未触碰） |
+| applicable_rules 仍只来自 TrustedInput | ✅ | §2.2（B4 未触碰） |
+| renderable_fact_types 仍为 allowed-to-render | ✅ | §3.3（B4 未触碰） |
+| precision 唯一来源仍为 Snapshot.decimals | ✅ | §13 / §8.2（B4 强化：token→fact_id→fact_type→snapshot.decimals→P0-1 完整链） |
+| UNIT_TO_QUANTITY 仍 exact equality | ✅ | §2.1 A-4（B4 未触碰） |
+| identifier 仍禁止 scope_class 推断 | ✅ | §6.3（B4 未触碰） |
+| range / whitelist span containment 保持 | ✅ | §8.3 / §8.4（B4 未触碰；BIND-8 复用同一 span 规则） |
+| ST001 / S-3 行为保持 | ✅ | §5.3（B4 未触碰标识 regex） |
+| ±3.2MPa / ± 3.2MPa 保持 | ✅ | §5.1 `(±\s*)?` + BIND-2（B4 未触碰 ± 组） |
+| P0-4 numeric binding 闭环 | ✅ | §8.1 BIND-8 + §8.2 判定链（B4 本轮补齐） |
+| P0-4 identifier binding 闭环 | ✅ | §8.1 BIND-7（R12 补齐，B4 未触碰） |
+| P0-4 whitelist exemption 闭环 | ✅ | §8.4（BIND-8/BIND-7 同样依赖 whitelist 豁免） |
+| P0-4 range token 行为 | ✅ | §8.3（区间逐 token 独立锚定，B4 未触碰） |
+| P0-4 display precision 来源 | ✅ | §8.2 → §13（snapshot.decimals，B4 强化链） |
+| P0-4 G3 comparison | ✅ | §8.2（unit 级联 + P0-1 value 比较，B4 闭环输入） |
 
 **READY 条件核对**：
 
@@ -966,13 +1007,14 @@ Phase 5: 状态机（accuracy_validator.py）
 | ---- | ---- |
 | 所有回退全部恢复 | ✅（R1–R12） |
 | B1–B3 全部闭合 | ✅ |
+| B4 numeric-token binding 完整闭环 | ✅（BIND-8 + §8.2 判定链 + INV-24 + T-18 Case A–G） |
 | applicable_rules ⊆ P0_RULE_IDS 修复完成 | ✅（R16 / A-11 / INV-23 / T-17） |
-| 无未处理的确定性回归 | ✅（遗漏扫描 5 项均为 REGRESSION CANDIDATE，非确定性回归，已如实列出；待冻结登记确认——确认任一成立即回退 NOT READY） |
+| 无未处理的确定性回归 | ✅（遗漏扫描 6 项均为 CANDIDATE，非确定性回归；第 6 项 TABLE-NUMERIC-BINDING 已按 B4 轮指令标记为 EXECUTABILITY CANDIDATE，不重新设计 TableCell） |
 | 所有 Unit lexer 反例闭合 | ✅（8/8，§5.4，含 B1 新增三例） |
 | 所有 truth source 唯一 | ✅（precision / applicability / unit registry / renderable 各单一来源） |
-| SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4） |
-| 没有重新设计其他部分 | ✅（R16 仅新增一条 Stage A 集合校验；B2 仅补异常检查；B3 仅加构造守卫；字段语义 / 六元 identity / SHA-256 issue_id 零改动；CaseStatus 聚合 / ST001 / S-3 / ± / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
+| SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4；TableCell 多 numeric token 场景已登记候选） |
+| 没有重新设计其他部分 | ✅（B4 仅补 BIND-8 + §8.2 判定链；不新增 P0 Rule、不改 AnchorDeclaration 结构、不改 ActualIssue identity / ExpectedIssue matching / Unit Registry / identifier scope / ± 组 / 标识 regex / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
 
-执行层复核与遗漏扫描期间本文档状态为 NOT READY；R16 恢复完成、B1–B3 闭合、扫描未发现未处理确定性回归后，最终状态如下。
+B4 修复期间本文档状态为 NOT READY；B4 闭合、P0-4 完整闭环、交叉检查零新冲突后，最终状态如下。
 
 **Step 7-E Coding Contract v10 = READY**
