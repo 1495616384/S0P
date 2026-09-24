@@ -23,6 +23,9 @@
 > | R10 | SystemOutput 恢复结构表达力 | §4 |
 > | R11 | 补回 v10 静默丢失的冻结条款：range 逐 token 锚定 + whitelist span containment | §8.3 / §8.4 |
 > | R12 | 自检补充恢复：§5.3 四行 candidate 对齐、§6.2 C30 对齐、BIND-7 标识同表绑定、INV-15 交叉引用修正 | §5.3 / §6.2 / §8.1 / §0 |
+> | R13 | B1 修复：unit lexer 完整 token 边界（unit-start / unit-cont 文法 + 3 组新反例 + U-5） | §5.1 / §5.4 |
+> | R14 | B2 修复：frozen_round 异常行为与契约一致（补齐检查，数学语义零改动） | §12 |
+> | R15 | B3 修复：ActualIssue build-only 守卫（__post_init__ + object.__new__ build） | §11 |
 
 ---
 
@@ -44,7 +47,7 @@
 | INV-10 | `issue_id` = `SHA-256(canonical JSON of identity tuple)`，禁止 Python `hash()` | v9 冻结 |
 | INV-11 | `Anchor.fact_id` 必须通过 `cdm.id.is_valid_fact_id()` | Step 7-B 冻结 |
 | INV-12 | Unit Registry value 必须来自 `src.cdm.registry.QUANTITY_KINDS` | Step 7-B 冻结 |
-| INV-13 | 不允许外部向 ActualIssue 构造函数传入 identity / issue_id（见 §11） | v10 新增 |
+| INV-13 | ActualIssue 为 build-only：identity / issue_id 不可作为 constructor 参数（TypeError）；任何 ActualIssue(...) 直接构造亦失败（__post_init__ 守卫）；唯一构造入口 = build()，产物同时具备完整 identity 与 issue_id（见 §11） | v10 新增，B3 加固 |
 | INV-14 | TemplateSpec.fact_display_spec 是显示规格唯一真相源；Step 7-E 只取只读 decimals 快照（见 §3.1） | D-025 |
 | INV-15 | renderable_fact_types ≠ required_facts，是独立 trusted snapshot（见 §3.3） | v10 确认 |
 | INV-16 | matching key = (rule_id, fact_id)；severity / note 不参与 matching；one-to-one 双向（consumed_expected_indices + consumed_actual_indices） | 冻结恢复 R1 |
@@ -372,12 +375,13 @@ class SystemOutput:
 
 Step 7-E 从渲染文本**自己提取** numeric + identifier token，不信任 System 的声明。
 
-### 5.1 冻结的正则表达式（R3 修正单位组）
+### 5.1 冻结的正则表达式（R3 修正单位组，B1 加固完整 token 边界）
 
 ```python
 # 数值 token：捕获可选 ± 前缀、可选 ± 号、数字主体、可选科学计数法、可选单位后缀
-# 单位组（R3 修正）：支持 / 与 % 的完整单位语法，必须完整捕获 UNIT_TO_QUANTITY 全部键（§5.4）
-NUMERIC_TOKEN_RE = r'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?|%)?'
+# 单位组（B1 修复）：完整 token 边界 —— unit candidate = [A-Za-zμ%][A-Za-z0-9μ²³%/]*
+# （unit-start 起始 + unit-cont 延续的极大连续 run；必须完整捕获 UNIT_TO_QUANTITY 全部键，§5.4）
+NUMERIC_TOKEN_RE = r'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ%][A-Za-z0-9μ²³%/]*)?'
 
 # 标识 token：构件/测点/样品编号（ST 首置；K/C/M/P/S/B/D 前缀）
 IDENTIFIER_TOKEN_RE = r'(?<![A-Za-z0-9])((?:构件|测点|样品|检测点|裂缝|强度|检验点)?\s*)(ST|[KCMPSBD])(-?\d{1,5})(-\d{1,3})?(?![A-Za-z0-9])'
@@ -412,38 +416,50 @@ sort_key = (char_start, -span_length, 0 if identifier else 1)
 
 **R12 修正说明**：v10 表中 H2O / A4 / ISO9001 / GB50292 四行误写 numeric candidate 存在，违反已冻结的「candidate 描述与 regex 一致」要求，本次恢复对齐。
 
-### 5.4 Unit lexer 完整捕获不变量（R3 恢复冻结）
+### 5.4 Unit lexer 完整捕获不变量（R3 恢复冻结，B1 加固完整 token 边界）
 
-单位捕获组冻结为：
+单位候选文法（冻结）：
 
 ```
-([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?|%)
+unit_candidate := [A-Za-zμ%][A-Za-z0-9μ²³%/]*
+    unit-start（起始字符）：[A-Za-zμ%]
+    unit-cont （延续字符）：[A-Za-z0-9μ²³%/]
 ```
+
+即：数值结束后，从第一个 unit-start 字符开始，取**极大连续 unit-like run** 作为**完整 unit candidate**。
 
 不变量（冻结）：
 
 | # | 不变量 |
 | ---- | ---- |
 | U-1 | `UNIT_TO_QUANTITY` 的每一个 key 必须能被单位组**完整捕获**（完整 unit token）（INV-18） |
-| U-2 | 禁止前缀截断：`N/mm² → N`、`kN/m² → kN` 均为违规 |
-| U-3 | 禁止静默退化：捕获到单位候选但 ∉ `UNIT_TO_QUANTITY` → `UNKNOWN_UNIT` → Stage D FAIL（不得静默置 None） |
-| U-4 | 单位组未捕获（数字后无单位字符）→ unit = None（合法：纯数值 / 无量纲） |
+| U-2 | 禁止前缀截断**与尾部静默截断**：`m3 → m`、`N/mm2 → N/mm`、`N/mm²x → N/mm²` 均为违规 |
+| U-3 | 完整 candidate ∉ `UNIT_TO_QUANTITY` → `UNKNOWN_UNIT` → Stage D FAIL（不得静默置 None） |
+| U-4 | 数值后无 unit-start 字符（普通标点 / 空格 / 中文说明等）→ unit = None（合法：纯数值 / 无量纲） |
+| U-5 | **禁止用 negative lookahead 把错误单位变成「没有 numeric token」**——错误单位必须以 UNKNOWN_UNIT 显式识别，numeric 主体必须保留 |
 
 回归反例（全部必须闭合）：
 
-| 输入 | numeric | unit | quantity_kind | 判定 |
+| 输入 | numeric | unit candidate | quantity_kind | 判定 |
 | ---- | ---- | ---- | ---- | ---- |
 | `12.5N/mm²` | 12.5 | `N/mm²` | pressure | 完整捕获 |
 | `12.5kN/m²` | 12.5 | `kN/m²` | pressure | 完整捕获 |
 | `32.5%` | 32.5 | `%` | ratio | 完整捕获 |
 | `32.4psi` | 32.4 | `psi` | — | UNKNOWN_UNIT → Stage D FAIL |
 | `32.4abc` | 32.4 | `abc` | — | UNKNOWN_UNIT → Stage D FAIL |
+| `32.4m3` | 32.4 | `m3` | — | UNKNOWN_UNIT → Stage D FAIL（B1 新增） |
+| `32.4N/mm2` | 32.4 | `N/mm2` | — | UNKNOWN_UNIT → Stage D FAIL（B1 新增） |
+| `12.5N/mm²x` | 12.5 | `N/mm²x` | — | UNKNOWN_UNIT → Stage D FAIL（B1 新增） |
 
 禁止结果（违规）：
-- `12.5N/mm²` → unit=`N`（截断）
-- `12.5kN/m²` → unit=`kN`（截断）
-- `32.5%` → unit=None（静默退化）
-- `32.4psi` / `32.4abc` → unit=None（静默退化）
+- `m3` → `m`；`N/mm2` → `N/mm`；`N/mm²x` → `N/mm²`（前缀 / 尾部截断）
+- `32.4m3` / `32.4N/mm2` / `12.5N/mm²x` → unit=None（静默退化）
+- `32.4m3` / `32.4N/mm2` / `12.5N/mm²x` → 无 numeric token（lookahead 吞 token，违反 U-5）
+
+边界澄清（文法推论，非新规则）：
+- `/` 属 unit-cont 不属 unit-start → `1/2` 仍解析为两个 numeric token（各自独立锚定），分数不被吞为单位
+- `-` 不在 unit 字符集 → range「2.0-2.5m」行为不变（§8.3）
+- 数字属 unit-cont 不属 unit-start → `32.4m3` 完整捕获 `m3`，纯数字主体解析不受影响
 
 ---
 
@@ -619,7 +635,7 @@ identity ≡ (
 - **变更 identity 语义必须先在 07_DECISIONS.md 落新决策；禁止在契约修订中静默替换**
 - v10 曾将 identity 静默替换为 (rule_id, severity, category, fact_id, source)，本轮回归修复恢复冻结六元组
 
-### 11.2 Public constructor 禁止传入 identity / issue_id（保持 v10 修复）
+### 11.2 build-only 构造守卫（B3 加固；identity / issue_id 保持 init=False）
 
 ```python
 @dataclass
@@ -639,14 +655,24 @@ class ActualIssue:
     # ── 以下字段不在 public constructor 中（init=False，保持 v10 修复） ──
     identity: tuple = field(init=False, repr=False)
     issue_id: str = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        # build-only 守卫（B3 修复）：
+        # dataclass 生成的 __init__ 在字段赋值后必调用本方法
+        #   → 任何 ActualIssue(...) 直接构造在此失败，「identity / issue_id 未初始化的
+        #     半成品」不可能逸出；
+        # build() 走 object.__new__ 绕过 __init__，不触发本方法。
+        raise TypeError("ActualIssue is build-only; use ActualIssue.build(...)")
 ```
 
-约束：
-- `identity` 和 `issue_id` 声明为 `field(init=False)`，public constructor 不接受这两个参数
-- 调用 `ActualIssue(identity=..., issue_id=...)` → Python 抛出 `TypeError`（参数不在 `__init__` 签名中）
-- 唯一构造入口 = `build()`
+约束（B3 加固）：
+- `ActualIssue(identity=...)` → `TypeError`（参数不在 `__init__` 签名）
+- `ActualIssue(issue_id=...)` → `TypeError`（同上）
+- `ActualIssue(rule_id=..., severity=..., ...)` **任何直接构造** → `TypeError`（`__post_init__` build-only 守卫）
+- 唯一构造入口 = `build()`；build() 产物**同时具备**完整 identity 与 issue_id
+- 字段语义、六元 identity（§11.1）、SHA-256 issue_id 规则（§11.4）**均未改动**——仅构造机制加固
 
-### 11.3 build() classmethod（唯一构造入口，保持）
+### 11.3 build() classmethod（唯一构造入口，B3 加固为真 build-only）
 
 ```python
 @classmethod
@@ -662,6 +688,20 @@ def build(
     occurrence_id: Optional[str] = None,
     table_aggregate: Optional[str] = None,
 ) -> "ActualIssue":
+    # B3：build() 是唯一绕过 __post_init__ 守卫的入口
+    # （object.__new__ 绕过 dataclass __init__），独家完成
+    # 字段装配 + identity + issue_id，产物完整。
+    instance = object.__new__(cls)
+    object.__setattr__(instance, "rule_id", rule_id)
+    object.__setattr__(instance, "severity", severity)
+    object.__setattr__(instance, "issue_type", issue_type)
+    object.__setattr__(instance, "location", location)
+    object.__setattr__(instance, "message", message)
+    object.__setattr__(instance, "fact_id", fact_id)
+    object.__setattr__(instance, "evaluation_id", evaluation_id)
+    object.__setattr__(instance, "occurrence_id", occurrence_id)
+    object.__setattr__(instance, "table_aggregate", table_aggregate)
+
     # identity 由 build() 内部按 §11.1 冻结六元组构造，外部无法控制
     identity = (
         issue_type,
@@ -670,17 +710,6 @@ def build(
         evaluation_id,
         occurrence_id,
         table_aggregate,
-    )
-    instance = cls(
-        rule_id=rule_id,
-        severity=severity,
-        issue_type=issue_type,
-        location=location,
-        message=message,
-        fact_id=fact_id,
-        evaluation_id=evaluation_id,
-        occurrence_id=occurrence_id,
-        table_aggregate=table_aggregate,
     )
     object.__setattr__(instance, "identity", identity)
     object.__setattr__(instance, "issue_id", _compute_issue_id(identity))
@@ -699,16 +728,25 @@ def _compute_issue_id(identity: tuple) -> str:
 - 禁止 Python `hash()`（结果不稳定、进程间不同）
 - identity 六元组顺序严格固定（issue_type → location → fact_id → evaluation_id → occurrence_id → table_aggregate）
 
-### 11.5 外部构造检查（保持）
+### 11.5 外部构造检查（B3 加固）
 
 ```python
-# ❌ 禁止：外部传入 identity
+# ❌ 禁止：外部传入 identity → TypeError（参数不在 __init__ 签名）
 issue = ActualIssue(rule_id="ANCHOR.BINDING", identity=("x", "y"))
 
-# ❌ 禁止：外部传入 issue_id
+# ❌ 禁止：外部传入 issue_id → TypeError（参数不在 __init__ 签名）
 issue = ActualIssue(rule_id="ANCHOR.BINDING", issue_id="abc123")
 
-# ✅ 允许：唯一入口
+# ❌ 禁止：任何直接构造 → TypeError（__post_init__ build-only 守卫，B3）
+issue = ActualIssue(
+    rule_id="ANCHOR.BINDING",
+    severity="error",
+    issue_type="quantity_kind_mismatch",
+    location="rendered_segments[2]:char[15-20]",
+    message="token quantity_kind mismatch",
+)
+
+# ✅ 允许：唯一入口（产物同时具备完整 identity 与 issue_id）
 issue = ActualIssue.build(
     rule_id="ANCHOR.BINDING",
     severity="error",
@@ -721,24 +759,46 @@ issue = ActualIssue.build(
 
 ---
 
-## 12. frozen_round（冻结）
+## 12. frozen_round（冻结，B2 修复异常行为一致性）
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
 
 def frozen_round(value: Any, decimals: int) -> float:
-    """Decimal(str(value)).quantize 结果，用 ROUND_HALF_UP。"""
-    # 禁止 NaN / Inf → 抛 ValueError
-    # decimals < 0 → 抛 TypeError
-    # value = None → 抛 ValueError
-    d = Decimal(str(value))
-    quantize_str = "0." + ("0" * decimals) if decimals > 0 else "1"
+    """frozen_round — 工程四舍五入（Decimal(str(value)) + ROUND_HALF_UP）。
+
+    异常行为（冻结，B2：代码与契约完全一致）：
+        ① value is None              → ValueError
+        ② value 为 NaN / +Inf / -Inf → ValueError
+        ③ decimals 非 int 或 < 0     → TypeError
+    多条件同时非法时，按 ①②③ 顺序抛出首个异常（确定性）。
+    """
+    # ①
+    if value is None:
+        raise ValueError("frozen_round: value must not be None")
+
+    d = Decimal(str(value))      # 禁止 Decimal(value)（浮点二进制误差敏感）
+
+    # ②
+    if d.is_nan() or d.is_infinite():
+        raise ValueError("frozen_round: value must be finite (NaN / Inf forbidden)")
+
+    # ③
+    if not isinstance(decimals, int) or decimals < 0:
+        raise TypeError("frozen_round: decimals must be a non-negative int")
+
+    # ④ 合法输入：数学语义不变（禁止 Python round()）
+    if decimals == 0:
+        quantize_str = "1"
+    else:
+        quantize_str = "0." + ("0" * decimals)
     return float(d.quantize(Decimal(quantize_str), rounding=ROUND_HALF_UP))
 ```
 
 约束：
 - 禁止 Python 内置 `round()`（banker's rounding，与工程四舍五入不符）
 - 必须用 `Decimal(str(value))` 而非 `Decimal(value)`（后者对浮点二进制误差敏感）
+- B2：原 v10 注释声明了异常行为但代码未实现——本轮补齐实现；数学语义（`Decimal(str(value))` + `quantize` + `ROUND_HALF_UP`）**零改动**
 
 ---
 
@@ -780,9 +840,9 @@ decimals
 | # | 反例类别 | 测试重点 |
 | ---- | ---- | ---- |
 | T-1 | Counting | applicable_rule_count = 0 时 CaseStatus = NOT_EVALUABLE；applicable_rule_count < 7 时仍然 PASS |
-| T-2 | Unit Registry | loaded mapping == 冻结 dict（缺 / 多 / 错 → precondition_error）；unit lexer 反例：12.5N/mm²→N/mm²/pressure、12.5kN/m²→kN/m²/pressure、32.5%→%/ratio、32.4psi / 32.4abc→UNKNOWN_UNIT |
+| T-2 | Unit Registry | loaded mapping == 冻结 dict（缺 / 多 / 错 → precondition_error）；unit lexer 反例：12.5N/mm²→N/mm²/pressure、12.5kN/m²→kN/m²/pressure、32.5%→%/ratio、32.4psi / 32.4abc→UNKNOWN_UNIT（详见 §5.4 全表含 B1 新增三例） |
 | T-3 | FactDisplaySpec 两层 | TemplateSpec dict 含 decimals+unit；Snapshot 只含 decimals；Step 7-E 不 import unit 字段 |
-| T-4 | ActualIssue constructor | ActualIssue(identity=...) → TypeError；ActualIssue(issue_id=...) → TypeError；build() 正常；identity 六元组内容与顺序正确 |
+| T-4 | ActualIssue constructor | ActualIssue(identity=...) → TypeError；ActualIssue(issue_id=...) → TypeError；**任何 ActualIssue(...) 直接构造 → TypeError（B3）**；build() 正常且产物同时具备完整 identity 与 issue_id；identity 六元组内容与顺序正确 |
 | T-5 | FactDisplaySpec 重复 | JSON 数组含重复 fact_type → precondition_error；dict 含唯一 key → 正常 |
 | T-6 | Tokenizer candidate | ST001 numeric=NONE；S-3 numeric=3；H2O / A4 / ISO9001 / GB50292 numeric=NONE（前置字母阻断） |
 | T-7 | renderable_fact_types | frozenset[str] 正常；list[str] → TypeError；空集合合法；非法 fact_type → precondition_error；allowed-to-render 语义（actual-rendered 不进入 TrustedInput） |
@@ -793,6 +853,8 @@ decimals
 | T-12 | Stage B | trusted_input.applicable_rules 之外无法使规则变为 applicable；∉ → NOT_EVALUABLE |
 | T-13 | ExpectedEvaluations | 重复 evaluation_id → precondition_error；多 Evaluation 全部可按 id 确定性查找 |
 | T-14 | Range / Whitelist | 区间逐 token 锚定；span 部分重叠不豁免；完全包含才豁免 |
+| T-15 | frozen_round 异常（B2） | frozen_round(None, 2) → ValueError；frozen_round(float("nan"), 2) → ValueError；frozen_round(float("inf"), 2) → ValueError（-Inf 同）；frozen_round(1.2, -1) → TypeError；frozen_round(2.345, 2) → 2.35 |
+| T-16 | Unit 完整 token 边界（B1） | 32.4m3 → unit=`m3` → UNKNOWN_UNIT；32.4N/mm2 → unit=`N/mm2` → UNKNOWN_UNIT；12.5N/mm²x → unit=`N/mm²x` → UNKNOWN_UNIT；三者均不得截断、不得 unit=None、不得被 lookahead 吞掉 numeric token |
 
 ### 14.2 实现阶段划分
 
@@ -815,9 +877,9 @@ Phase 5: 状态机（accuracy_validator.py）
 
 ---
 
-## 结尾判定：READY
+## 结尾判定
 
-**十项回退全部恢复**：
+**回归恢复（R1–R12，已完成）**：
 
 | # | 回退项 | 恢复位置 |
 | ---- | ---- | ---- |
@@ -832,19 +894,44 @@ Phase 5: 状态机（accuracy_validator.py）
 | 九 | renderable_fact_types → allowed-to-render | §3.3 |
 | 十 | SystemOutput → 结构表达力恢复 | §4 |
 
-**补充恢复（自检发现，属既有冻结基线）**：
-- range 逐 token 锚定（§8.3）与 whitelist span containment（§8.4）——v10 静默丢失，本次补回
-- §5.3 表 H2O / A4 / ISO9001 / GB50292 四行、§6.2 C30 边界——恢复「candidate 描述与 regex 一致」
-- BIND-7 标识同表绑定——恢复 04_REPORT_IR §41.2.3 / D-018 冻结要求
+补充恢复：range 逐 token 锚定（§8.3）、whitelist span containment（§8.4）、§5.3 / §6.2 candidate 对齐、BIND-7 标识同表绑定。
+
+**执行层阻塞项闭合（B1–B3，本轮）**：
+
+| # | 阻塞项 | 修复位置 | 状态 |
+| ---- | ---- | ---- | ---- |
+| B1 | Unit Lexer 完整 token 边界 | §5.1 / §5.4（unit-start / unit-cont 文法 + U-5 + 3 组新反例） | ✅ 闭合 |
+| B2 | frozen_round 行为一致性 | §12（异常检查补齐，数学语义零改动） | ✅ 闭合 |
+| B3 | ActualIssue build-only | §11（__post_init__ 守卫 + object.__new__ build） | ✅ 闭合 |
+
+**内部交叉检查（B1–B3 修复轮，零新冲突）**：
+
+| 检查项 | 结果 | 位置 |
+| ---- | ---- | ---- |
+| 7 P0 完全不变 | ✅ | §13（7 条未增删） |
+| Step 7-D 完全未修改 | ✅ | 本轮零改动（仅契约文档） |
+| ActualIssue 六元 identity 完全不变 | ✅ | §11.1（B3 仅改构造机制） |
+| ExpectedIssue matching 仍为 (rule_id, fact_id) | ✅ | §10.1 |
+| applicable_rules 仍只来自 TrustedInput | ✅ | §2.2 |
+| renderable_fact_types 仍为 allowed-to-render | ✅ | §3.3 |
+| precision 唯一来源仍为 Snapshot.decimals | ✅ | §13 |
+| UNIT_TO_QUANTITY 仍 exact equality | ✅ | §2.1 A-4 |
+| identifier 仍禁止 scope_class 推断 | ✅ | §6.3 |
+| range / whitelist span containment 保持 | ✅ | §8.3 / §8.4 |
+| ST001 / S-3 行为保持 | ✅ | §5.3（B1 仅改单位组，标识 regex 未动） |
+| ±3.2MPa / ± 3.2MPa 保持 | ✅ | §5.1 `(±\s*)?` + BIND-2（B1 未动 ± 组） |
 
 **READY 条件核对**：
 
 | 条件 | 结果 |
 | ---- | ---- |
-| 所有回退全部恢复 | ✅（R1–R10） |
-| 所有 Unit lexer 反例闭合 | ✅（12.5N/mm² / 12.5kN/m² / 32.5% / 32.4psi / 32.4abc，§5.4） |
+| 所有回退全部恢复 | ✅（R1–R12） |
+| B1–B3 全部闭合 | ✅ |
+| 所有 Unit lexer 反例闭合 | ✅（8/8，§5.4，含 B1 新增三例） |
 | 所有 truth source 唯一 | ✅（precision / applicability / unit registry / renderable 各单一来源） |
 | SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4） |
-| 没有重新设计其他部分 | ✅（CaseStatus 聚合 / ST001 / S-3 / ±3.2MPa / ± 3.2MPa / frozen_round / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
+| 没有重新设计其他部分 | ✅（B2 仅补异常检查；B3 仅加构造守卫；字段语义 / 六元 identity / SHA-256 issue_id 零改动；CaseStatus 聚合 / ST001 / S-3 / ± / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
 
-**Step 7-E Coding Contract v10（回归修复版）判定：READY**
+执行层复核期间本文档状态为 NOT READY；B1–B3 全部闭合且交叉检查零新冲突后，状态恢复如下。
+
+**Step 7-E Coding Contract v10 = READY**
