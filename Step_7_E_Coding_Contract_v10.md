@@ -1,10 +1,28 @@
-# Step 7-E Accuracy Validator — Coding Contract v10
+# Step 7-E Accuracy Validator — Coding Contract v10（回归修复版）
 
-> 版本：v10
+> 版本：v10（回归修复版）
 > 状态：READY
 >
 > 本文档冻结 Step 7-E Accuracy Validator 的完整编码契约。
-> 所有规则、数据类型、状态机、边界条件均为正式声明，实现必须严格遵守。
+> 本轮为回归审计（REGRESSION FOUND）后的**恢复轮**：只恢复被意外破坏的既有冻结契约。
+> 不新增业务能力、不新增 P0 Rule、不修改 Step 7-D、不扩大 Validator 职责、不写代码。
+
+> **回归修复记录（R1–R12）**：
+>
+> | 编号 | 恢复项 | 位置 |
+> | ---- | ---- | ---- |
+> | R1 | ExpectedIssue matching 恢复 (rule_id, fact_id) 粒度 + 双向 one-to-one | §10 |
+> | R2 | ActualIssue identity 恢复冻结六元组（保留构造修复） | §11 |
+> | R3 | unit lexer 完整捕获注册表全部键 | §5.1 / §5.4 |
+> | R4 | P0-1 精度唯一来源收敛到 Snapshot.decimals | §13 |
+> | R5 | Stage B 恢复只读 membership test | §2.2 |
+> | R6 | expected_evaluations 恢复多 Evaluation dict 结构 | §3 / §3.4 |
+> | R7 | Unit Registry 冻结改为 exact equality，删除无值 hash 声明 | §3.2 / §2.1 A-4 |
+> | R8 | 删除 identifier → scope_class 映射表 | §6.3 |
+> | R9 | renderable_fact_types 恢复 allowed-to-render 语义 | §3.3 |
+> | R10 | SystemOutput 恢复结构表达力 | §4 |
+> | R11 | 补回 v10 静默丢失的冻结条款：range 逐 token 锚定 + whitelist span containment | §8.3 / §8.4 |
+> | R12 | 自检补充恢复：§5.3 四行 candidate 对齐、§6.2 C30 对齐、BIND-7 标识同表绑定、INV-15 交叉引用修正 | §5.3 / §6.2 / §8.1 / §0 |
 
 ---
 
@@ -28,7 +46,14 @@
 | INV-12 | Unit Registry value 必须来自 `src.cdm.registry.QUANTITY_KINDS` | Step 7-B 冻结 |
 | INV-13 | 不允许外部向 ActualIssue 构造函数传入 identity / issue_id（见 §11） | v10 新增 |
 | INV-14 | TemplateSpec.fact_display_spec 是显示规格唯一真相源；Step 7-E 只取只读 decimals 快照（见 §3.1） | D-025 |
-| INV-15 | renderable_fact_types ≠ required_facts，是独立 trusted snapshot（见 §3.2） | v10 确认 |
+| INV-15 | renderable_fact_types ≠ required_facts，是独立 trusted snapshot（见 §3.3） | v10 确认 |
+| INV-16 | matching key = (rule_id, fact_id)；severity / note 不参与 matching；one-to-one 双向（consumed_expected_indices + consumed_actual_indices） | 冻结恢复 R1 |
+| INV-17 | ActualIssue.identity ≡ (issue_type, location, fact_id, evaluation_id, occurrence_id, table_aggregate)；变更 identity 语义必须先落 07_DECISIONS.md | 冻结恢复 R2 |
+| INV-18 | UNIT_TO_QUANTITY 每个 key 必须被 numeric tokenizer 单位组完整捕获；加载 mapping 必须与冻结 dict 完全相等（A-4） | 冻结恢复 R3/R7 |
+| INV-19 | P0 numeric comparison 精度唯一来源 = FactDisplaySpecSnapshot.decimals；G3.precision 不参与 | 冻结恢复 R4 |
+| INV-20 | applicable_rules 唯一来源 = trusted_input.applicable_rules；Stage B 只读 membership test | 冻结恢复 R5 |
+| INV-21 | renderable_fact_types = allowed-to-render（trusted 侧）；actual-rendered 不进入 TrustedInput | 冻结恢复 R9 |
+| INV-22 | Anchor 标识比较 = normalized_identifier == parse_fact_id(anchor.fact_id).instance_key；禁止 scope_class 推断 | 冻结恢复 R8 |
 
 ---
 
@@ -50,7 +75,7 @@
 | `FAIL` | 至少一条 applicable Rule FAIL |
 | `NOT_EVALUABLE` | 无可适用规则，或至少一条 applicable Rule 为 NOT_EVALUABLE |
 
-### 1.3 计数定义（v10 正式冻结）
+### 1.3 计数定义（冻结）
 
 两个统计量是**纯集合运算**，与 CaseStatus 聚合逻辑解耦：
 
@@ -72,7 +97,7 @@ evaluable_rule_count
 > 只要全部 applicable Rule 均 PASS，CaseStatus 即为 PASS。
 > `applicable_rule_count` 可能小于 7（用例只适用部分规则）。
 
-### 1.4 CaseStatus 聚合顺序（v9 冻结，v10 确认）
+### 1.4 CaseStatus 聚合顺序（冻结）
 
 四条规则**顺序敏感**，逐条检查命中即停止：
 
@@ -87,12 +112,12 @@ evaluable_rule_count
 
 ---
 
-## 2. 五阶段状态机（v9 冻结）
+## 2. 五阶段状态机（冻结）
 
 ```
 Stage A (Precondition)
     ↓ pass
-Stage B (Applicability)
+Stage B (Applicability · 只读 membership test)
     ↓ pass（至少一条 applicable Rule）
 Stage C (System Output Exists)
     ↓ pass
@@ -101,7 +126,7 @@ Stage D (Well-formed)
 Stage E (Compare)
 ```
 
-### 2.1 Stage A: Precondition（v10 增补重复检查）
+### 2.1 Stage A: Precondition
 
 **输入**：TrustedInput + SystemOutput
 **产出**：precondition_error 或进入 Stage B
@@ -113,18 +138,36 @@ Stage E (Compare)
 | A-1 | SystemOutput.report_ir 非空 | SystemOutput 字段缺失 |
 | A-2 | TrustedInput.fact_display_spec 中同一 fact_type 不重复 | 重复 fact_type → **precondition_error** |
 | A-3 | TrustedInput.fact_display_spec 的 key 均为合法 fact_type 格式 | key 格式 ≠ `<scope_class>.<attribute>` → precondition_error |
-| A-4 | TrustedInput.unit_registry 内容完整且每个 value ∈ QUANTITY_KINDS | value 不在 QUANTITY_KINDS → precondition_error |
+| A-4 | TrustedInput.unit_registry.mapping 与 §3.2 冻结 `UNIT_TO_QUANTITY` **完全相等（逐键逐值）** | 缺键 / 多键 / 任一值不等 → **precondition_error** |
 | A-5 | TrustedInput.renderable_fact_types 为 frozenset[str]（或空） | 非 frozenset 或元素非 str → precondition_error |
 | A-6 | TrustedInput.applicable_rules 为 frozenset[str]（case-local） | 非 frozenset 或元素非 str → precondition_error |
 | A-7 | ExpectedIssue 不重复同一 rule_id + fact_id 组合 | 重复 → precondition_error |
 | A-8 | 每个 GroundTruthFact.fact_id 通过 `cdm.id.is_valid_fact_id()` | 格式无效 → precondition_error |
 | A-9 | renderable_fact_types 中每个元素 ∈ 合法 fact_type 注册表 | 非法 → precondition_error |
+| A-10 | expected_evaluations 加载源中 evaluation_id 唯一 | 重复 → **precondition_error** |
 
-**v10 新增**：A-2（FactDisplaySpec 重复 fact_type 显式禁止，不允许 first-wins）。
+说明：
+- A-2：FactDisplaySpec 重复 fact_type 显式禁止，不允许 first-wins（v10 闭环保持）
+- A-4：R7 恢复——`value ∈ QUANTITY_KINDS` 检查降为冗余防御，**不是充分条件**；缺 unit / 多 unit / 错 mapping 都必须被 A-4 发现
+- A-10：R6 恢复——expected_evaluations 多 Evaluation 结构的查重入口
 
-### 2.2 Stage B: Applicability
+### 2.2 Stage B: Applicability Resolution（只读，R5 恢复冻结）
 
-为每条 Rule 判定当前用例是否适用，产出 `applicable_rules: frozenset[str]`。
+```
+applicable_rules ≡ trusted_input.applicable_rules
+```
+
+来源：`eval_config/cases/<case_id>/applicable_rules.json`（case-local trusted config）
+
+Stage B **仅做 membership test**：
+
+```
+rule_id ∉ trusted_input.applicable_rules  →  RuleStatus = NOT_EVALUABLE
+rule_id ∈ trusted_input.applicable_rules  →  继续 Stage C–E
+```
+
+Validator **不推导、不生成、不修改、不覆盖** applicable_rules（INV-20）。
+不存在第二个 applicability 真相源。
 
 ### 2.3 Stage C: System Output Exists
 
@@ -132,11 +175,11 @@ Stage E (Compare)
 
 ### 2.4 Stage D: Well-formed
 
-词法层检查（tokenizer / identifier grammar / unit 解析 / whitelist 命中）。详见 §5–§9。
+词法层检查（tokenizer / identifier grammar / unit 解析 / whitelist span containment / 标识绑定）。详见 §5–§9。
 
 ### 2.5 Stage E: Compare
 
-语义层比对（数值精度、锚定绑定、逻辑一致性、issue 匹配等）。
+语义层比对（数值精度、锚定级联、逻辑一致性、issue 匹配等）。
 
 ---
 
@@ -147,16 +190,16 @@ TrustedInput 是 Step 7-E 的唯一可信输入来源，由评测框架在 Valid
 ```python
 class TrustedInput:
     case: EvaluationCase                          # Step 7-D 冻结类型（INV-2）
-    applicable_rules: frozenset[str]              # case-local，从 applicable_rules.json 加载
-    expected_evaluations: ExpectedEvaluationSnapshot  # LOGIC.CONSISTENCY 唯一可信答案
-    whitelist: WhitelistRegistry                  # 登记制白名单（§41.2.4）
-    fact_display_spec: dict[str, FactDisplaySpecSnapshot]  # v10 两层明确（§3.1）
+    applicable_rules: frozenset[str]              # case-local trusted config（§2.2 只读 membership test 源）
+    expected_evaluations: dict[str, ExpectedEvaluationEntry]  # key = evaluation_id（§3.4，R6 恢复）
+    whitelist: WhitelistRegistry                  # 登记制白名单（§8.4）
+    fact_display_spec: dict[str, FactDisplaySpecSnapshot]  # 两层明确（§3.1）
     trusted_table_specs: dict[str, TableSpecSnapshot]      # 表格结构快照
-    unit_registry: UnitRegistrySnapshot           # v10 完整内容冻结（§3.2）
-    renderable_fact_types: frozenset[str]         # v10 schema 明确（§3.3）
+    unit_registry: UnitRegistrySnapshot           # mapping 必须 == §3.2 冻结 dict（A-4）
+    renderable_fact_types: frozenset[str]         # allowed-to-render（§3.3，R9 恢复）
 ```
 
-### 3.1 FactDisplaySpec 两层明确（v10 冻结）
+### 3.1 FactDisplaySpec 两层明确（冻结）
 
 **层 1（渲染真相源）**：`TemplateSpec.fact_display_spec[fact_type]` — 04_REPORT_IR v0.3.1.1 定义的完整渲染规格，包含：
 - `decimals: int` — 显示精度
@@ -176,7 +219,7 @@ class FactDisplaySpecSnapshot:
 
 **两层关系**：`TemplateSpec.fact_display_spec` ⊃ `FactDisplaySpecSnapshot`（后者是前者的只读子集投影）。Step 7-E 不修改、不覆盖、不派生 unit。
 
-### 3.2 Unit Registry 完整内容（v10 冻结）
+### 3.2 Unit Registry 完整内容（冻结，R7 恢复可验证性）
 
 `UnitRegistrySnapshot.mapping` 从 `UNIT_TO_QUANTITY` dict 加载，内容**完全固定**如下（value 全部来自 QUANTITY_KINDS）：
 
@@ -215,41 +258,113 @@ UNIT_TO_QUANTITY: dict[str, str] = {
 }
 ```
 
-约束：
-- 新增单位必须先改此 dict + CDM QUANTITY_KINDS，不能运行时动态添加
-- 未知单位（不在此 dict 中）→ Stage D FAIL，错误码 `ANCHOR.UNKNOWN_UNIT`
-- Unit Registry 的 hash 由 Contract 冻结，加载时做完整性校验
+约束（冻结）：
+- 上方 dict 即唯一真相源；新增单位必须先改此 dict + CDM QUANTITY_KINDS，不能运行时动态添加
+- **Stage A A-4：加载后的 mapping 必须与本 dict 完全相等（逐键逐值）**；缺 unit / 多 unit / 错 mapping → precondition_error
+- 未知单位（不在此 dict 中）→ Stage D FAIL，错误码 `ANCHOR.UNKNOWN_UNIT`（示例：`psi`、`abc`，见 §5.4）
+- 每一个 dict key 必须能被 numeric tokenizer 单位组**完整捕获**（§5.4 不变量 U-1）
+- v10 的「hash 由 Contract 冻结」声明已删除（R7）：无 hash 值的冻结声明不成立，完整性由 A-4 exact equality 保证
 
-### 3.3 renderable_fact_types schema（v10 冻结）
+### 3.3 renderable_fact_types 语义（R9 恢复冻结：allowed-to-render）
 
 ```python
 renderable_fact_types: frozenset[str]
 ```
 
-约束：
+**定义（冻结）**：allowed-to-render fact_type 集合。
+
+来源链：
+
+```
+Template / Render Plan
+    ↓
+trusted snapshot（随用例配置冻结）
+    ↓
+TrustedInput.renderable_fact_types
+```
+
+**明确区分（冻结）**：
+
+```
+allowed-to-render ≠ actual-rendered
+```
+
+- `allowed-to-render`：trusted 侧声明的「本报告允许渲染哪些 fact_type」，**进入 TrustedInput**
+- `actual-rendered`：SystemOutput 侧的实际渲染事实，只读诊断，**不进入 TrustedInput，不参与任何判定**
+
+**Actual System Output 不能成为 TrustedInput 的来源。**
+
+类型约束：
 - 类型：必须是 `frozenset[str]`（不可变集合）
 - 每个元素：必须是合法 fact_type 格式（`<scope_class>.<attribute>`）
 - 空集合：合法
-- **与 required_facts 的明确区分**（INV-15）：
-  - `required_facts`（在 TemplateSpec 中）：类型层需求清单，用于输入完整性预检
-  - `renderable_fact_types`（TrustedInput 中）：本报告实际渲染过的 fact_type 快照，用于 ANCHOR.BINDING 的上下文判断
-  - 二者可能重叠，但语义不同
+
+**与 required_facts 的明确区分**（INV-15）：
+- `required_facts`（在 TemplateSpec 中）：类型层需求清单，用于输入完整性预检
+- `renderable_fact_types`（TrustedInput 中）：allowed-to-render 快照，用于 ANCHOR.BINDING 的上下文判断
+- 二者可能重叠，但语义不同
+
+### 3.4 ExpectedEvaluationSnapshot（R6 恢复冻结：多 Evaluation 集合结构）
+
+```python
+expected_evaluations: dict[str, ExpectedEvaluationEntry]
+```
+
+- **key** = `evaluation_id`（不透明稳定 ID，与 `GroundTruthConclusion.required_evaluation_ids` 同一 ID 域）
+- **value** = `ExpectedEvaluationEntry`
+
+```python
+class ExpectedEvaluationEntry:
+    evaluation_id: str        # 同 key
+    expected_status: str      # 期望判定值（受控值域由 ConclusionRule / report type 提供）
+    note: str = ""
+```
+
+约束（冻结）：
+- **支持多个 Evaluation**；LOGIC.CONSISTENCY 按 evaluation_id 做**确定性查找**
+- 加载源中 evaluation_id 重复 → Stage A precondition_error（A-10）
+- entry 字段为本阶段最小集；扩展 entry 字段必须先落 07_DECISIONS.md
 
 ---
 
-## 4. SystemOutput Schema
+## 4. SystemOutput Schema（R10 恢复结构表达力）
 
 SystemOutput 是被评测系统的产物，由 Step 7-E 自己 tokenize（Fix 3），不信任 System 自报的 TokenOccurrence。
 
 ```python
+class AnchorDeclaration:
+    token: str              # 声明绑定的 token 文本（与 04_REPORT_IR §13.1 anchors {token, fact_id} 对齐）
+    fact_id: str            # 绑定目标（必须通过 cdm.id.is_valid_fact_id()，INV-11）
+    char_start: int         # 在 RenderedSegment.raw_text 中的起始偏移
+    char_end: int           # 结束偏移（不含）
+
+class RenderedSegment:
+    segment_location: str   # 定位（semantic path + block id）
+    raw_text: str           # 渲染后文本 —— Validator 对其自行 tokenize
+    anchor_declarations: list[AnchorDeclaration]
+
+class TableCell:
+    raw_text: str
+    fact_id: Optional[str] = None    # 来自 Ref 的单元格携带
+
+class StructuredTable:
+    table_id: str
+    headers: list[TableCell]
+    rows: list[list[TableCell]]
+
 class SystemOutput:
-    report_ir: TypedDict            # 04_REPORT_IR 定义的 Document
-    rendered_segments: list[str]    # 渲染后按段落/表格/图注切分的文本列表
-    structured_tables: list[TableRow]  # 解析后的表格行
-    system_reported_issues: list[SystemIssue]  # 系统自报的 issue（仅供诊断）
-    system_evaluations: list[SystemEvaluation]  # 系统自报的 evaluation（仅供诊断）
-    # 注：无 TokenOccurrence —— Validator 自己 tokenize（Fix 3）
+    report_ir: TypedDict                          # 04_REPORT_IR 定义的 Document
+    rendered_segments: list[RenderedSegment]      # 结构化渲染段（禁止退化为 list[str]）
+    structured_tables: list[StructuredTable]
+    system_reported_issues: list[SystemIssue]     # 仅供诊断
+    system_evaluations: list[SystemEvaluation]    # 仅供诊断
+    # 无 TokenOccurrence —— Validator 自己 tokenize（Fix 3 不变）
 ```
+
+约束（冻结）：
+- `rendered_segments` 禁止退化为 `list[str]`——否则 AnchorDeclaration 与 char 定位无处表达，ANCHOR.BINDING / TABLE.INTERNAL 均不可执行
+- AnchorDeclaration 的 char 位置仅用于定位与诊断，**不替代 Validator 自行 tokenize**（Fix 3 不变）
+- AnchorDeclaration 结构与 04_REPORT_IR §13.1 / §41.2 的 anchors（token + fact_id）对齐
 
 ---
 
@@ -257,17 +372,18 @@ class SystemOutput:
 
 Step 7-E 从渲染文本**自己提取** numeric + identifier token，不信任 System 的声明。
 
-### 5.1 冻结的正则表达式
+### 5.1 冻结的正则表达式（R3 修正单位组）
 
 ```python
 # 数值 token：捕获可选 ± 前缀、可选 ± 号、数字主体、可选科学计数法、可选单位后缀
-NUMERIC_TOKEN_RE = r'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ²³]+)?'
+# 单位组（R3 修正）：支持 / 与 % 的完整单位语法，必须完整捕获 UNIT_TO_QUANTITY 全部键（§5.4）
+NUMERIC_TOKEN_RE = r'(?<![0-9A-Za-z])(±\s*)?([+-]?)(\d+(?:\.\d+)?)\s*(×10[⁰¹²³⁴⁵⁶⁷⁸⁹]+|×10\^-?\d+|[eE][+-]?\d+)?\s*([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?|%)?'
 
 # 标识 token：构件/测点/样品编号（ST 首置；K/C/M/P/S/B/D 前缀）
 IDENTIFIER_TOKEN_RE = r'(?<![A-Za-z0-9])((?:构件|测点|样品|检测点|裂缝|强度|检验点)?\s*)(ST|[KCMPSBD])(-?\d{1,5})(-\d{1,3})?(?![A-Za-z0-9])'
 ```
 
-### 5.2 Overlap 消解（v9 冻结）
+### 5.2 Overlap 消解（冻结）
 
 同一位置同时匹配 numeric 和 identifier 时，按 sort key 排序取第一个：
 
@@ -278,24 +394,60 @@ sort_key = (char_start, -span_length, 0 if identifier else 1)
 # 起始位置早的优先
 ```
 
-### 5.3 Candidate 反例（v10 与 regex 严格对齐）
+### 5.3 Candidate 反例（R12 修正：与 regex 严格对齐）
 
 | 原始文本 | identifier candidate | numeric candidate | overlap 消解后 |
 | ---- | ---- | ---- | ---- |
-| `ST001` | `ST001`（完整，正则匹配 `ST` + `001`） | **NONE**（`(?<![0-9A-Za-z])` 在 T 之后 lookbehind 失败，因为前一个字符 T 属于 `[0-9A-Za-z]`） | identifier `ST001` |
-| `S-3` | `S-3`（正则匹配 `S` + `-3`） | `3`（在 `-` 之后 lookbehind 成功，因为 `-` 不属于 `[0-9A-Za-z]`） | identifier `S-3`（identifier 优先） |
-| `2.3m` | 无 | `2.3m` | numeric `2.3m` |
-| `K001` | `K001` | **NONE**（`(?<![0-9A-Za-z])` 对第一个字符 K lookbehind 成功，但后面没有 numeric 候选位置——正则要求 lookbehind 在 numeric 起始位，此处无 numeric 起始位） | identifier `K001` |
-| `H2O` | 无（H 不在 `ST\|[KCMPSBD]` 前缀中） | 候选 `2`（lookbehind 在 H 之后成功） | numeric `2` |
-| `A4` | 无（A 不在前缀中） | 候选 `4` | numeric `4` |
-| `ISO9001` | 无（ISO 不在前缀中） | 候选 `9001` | numeric `9001` |
-| `GB50292` | 无（GB 不在前缀中） | 候选 `50292` | numeric `50292` |
+| `ST001` | `ST001`（正则匹配 `ST` + `001`） | **NONE**（前置 T ∈ [0-9A-Za-z]，lookbehind 失败） | identifier `ST001` |
+| `S-3` | `S-3`（正则匹配 `S` + `-3`） | `3`（前置 `-` ∉ [0-9A-Za-z]，lookbehind 成功） | identifier `S-3`（identifier 优先） |
+| `2.3m` | 无 | `2.3`（unit = `m`） | numeric `2.3m` |
+| `K001` | `K001` | **NONE**（前置 K ∈ [0-9A-Za-z]，lookbehind 失败） | identifier `K001` |
+| `H2O` | 无（H 不在受控前缀集） | **NONE**（前置 H ∈ [0-9A-Za-z]，lookbehind 失败） | 无 numeric token |
+| `A4` | 无（A 不在受控前缀集） | **NONE**（前置 A ∈ [0-9A-Za-z]，lookbehind 失败） | 无 numeric token |
+| `ISO9001` | 无（I 不在受控前缀集） | **NONE**（前置 O ∈ [0-9A-Za-z]，lookbehind 失败） | 无 numeric token |
+| `GB50292` | 无（G 不在受控前缀集） | **NONE**（前置 B ∈ [0-9A-Za-z]，lookbehind 失败） | 无 numeric token |
 
-**v10 关键修正**：`ST001` 的 numeric candidate 明确为 NONE。旧版错误写法（numeric candidate = `001`）忽略了 `(?<![0-9A-Za-z])` 在 T 之后的 lookbehind 失败。
+**统一机制**：前置字母一律阻断 numeric candidate（与 `ST001` 同一 lookbehind 机制）。
+对照：`GB 50292-2015`（空格分隔）中 `50292` 前置空格 → numeric candidate **存在**，走 whitelist span containment（§8.4）判定。
+
+**R12 修正说明**：v10 表中 H2O / A4 / ISO9001 / GB50292 四行误写 numeric candidate 存在，违反已冻结的「candidate 描述与 regex 一致」要求，本次恢复对齐。
+
+### 5.4 Unit lexer 完整捕获不变量（R3 恢复冻结）
+
+单位捕获组冻结为：
+
+```
+([A-Za-zμ]+(?:/[A-Za-zμ]+)*[²³]?|%)
+```
+
+不变量（冻结）：
+
+| # | 不变量 |
+| ---- | ---- |
+| U-1 | `UNIT_TO_QUANTITY` 的每一个 key 必须能被单位组**完整捕获**（完整 unit token）（INV-18） |
+| U-2 | 禁止前缀截断：`N/mm² → N`、`kN/m² → kN` 均为违规 |
+| U-3 | 禁止静默退化：捕获到单位候选但 ∉ `UNIT_TO_QUANTITY` → `UNKNOWN_UNIT` → Stage D FAIL（不得静默置 None） |
+| U-4 | 单位组未捕获（数字后无单位字符）→ unit = None（合法：纯数值 / 无量纲） |
+
+回归反例（全部必须闭合）：
+
+| 输入 | numeric | unit | quantity_kind | 判定 |
+| ---- | ---- | ---- | ---- | ---- |
+| `12.5N/mm²` | 12.5 | `N/mm²` | pressure | 完整捕获 |
+| `12.5kN/m²` | 12.5 | `kN/m²` | pressure | 完整捕获 |
+| `32.5%` | 32.5 | `%` | ratio | 完整捕获 |
+| `32.4psi` | 32.4 | `psi` | — | UNKNOWN_UNIT → Stage D FAIL |
+| `32.4abc` | 32.4 | `abc` | — | UNKNOWN_UNIT → Stage D FAIL |
+
+禁止结果（违规）：
+- `12.5N/mm²` → unit=`N`（截断）
+- `12.5kN/m²` → unit=`kN`（截断）
+- `32.5%` → unit=None（静默退化）
+- `32.4psi` / `32.4abc` → unit=None（静默退化）
 
 ---
 
-## 6. Identifier Grammar（v9 冻结）
+## 6. Identifier Grammar（冻结）
 
 ### 6.1 正式 grammar
 
@@ -305,54 +457,63 @@ ST 必须首置，[KCMPSBD] 为单点字符
 可选前缀描述性汉字（构件|测点|样品|检测点|裂缝|强度|检验点）
 ```
 
-### 6.2 明确的非 identifier 集合
+### 6.2 明确的非 identifier 集合（R12 修正对齐）
 
-以下文本**不属于** Identifier Grammar 匹配范围：
-- `H2O`, `CO2`, `A4`, `ISO9001`, `GB50292`, `C30`, `Q235`（前缀不在受控集）
+以下文本**不产生 identifier candidate**（首字母不在受控前缀集，或前缀后非数字）：
+- `H2O`, `CO2`, `A4`, `ISO9001`, `GB50292`, `Q235`
 - 规范号、标准号、章节号、表格号（这些走 whitelist，不走 identifier grammar）
 
-### 6.3 scope_class 映射（仅作文本解析规则，不声明类型）
+边界澄清（R12）：`C30` / `C45` 等混凝土强度等级——首字母 C ∈ 受控前缀集，identifier candidate **存在**；词法层不做混凝土等级 / 构件编号的语义区分（禁止 scope_class 推断，§6.3），最终由锚定绑定判定（BIND-7）：未绑定或 instance_key 不等 → FAIL。
 
-| 前缀 | 可能映射的 scope_class | 说明 |
-| ---- | ---- | ---- |
-| ST | point / sample | 检测点 / 样品 |
-| K, C | component | 构件 |
-| M | material | 材料 |
-| P | point | 测点 |
-| S | sample / defect | 样品 / 缺陷 |
-| B | building | 建筑 |
-| D | defect | 缺陷 |
+### 6.3 标识解析边界（R8 恢复冻结）
 
-注：映射是"可能"关系——具体 scope_class 由 GroundTruthFact.fact_id 三段式确认，Identifier Grammar 只负责**提取 candidate**，不做最终类型判定。
+Identifier 解析**只负责**：
+- text parsing
+- 产出 `normalized_identifier`
+
+**不做** identifier → scope_class 推断（v10 的前缀映射表 ST→point/sample、K/C→component、M→material、P→point、S→sample/defect、B→building、D→defect 已整体删除）。
+
+Anchor 标识比较**只做**：
+
+```
+normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
+```
+
+绝不推断 scope_class（INV-22）。
 
 ---
 
-## 7. Unit Registry 完整内容（v10 冻结，重复 §3.2）
+## 7. Unit Registry 完整内容（冻结，重复 §3.2）
 
 §3.2 已列完整 `UNIT_TO_QUANTITY` dict。本节不再重复。
 
 未知单位处理：
 - 未出现在 dict 中的单位 → Stage D 产出 `UNKNOWN_UNIT` 错误
-- 示例：`psi` → `UNKNOWN_UNIT` → Stage D FAIL
+- 示例：`psi` → `UNKNOWN_UNIT` → Stage D FAIL；`abc` → `UNKNOWN_UNIT` → Stage D FAIL
 
 ---
 
-## 8. ANCHOR.BINDING（v9 冻结）
+## 8. ANCHOR.BINDING（冻结）
 
 ### 8.1 Stage D 检查（Well-formed）
 
 | # | 检查 | 错误码 |
 | ---- | ---- | ---- |
-| BIND-1 | 每个 numeric token 的单位后缀可被 `UNIT_TO_QUANTITY` 解析 | `ANCHOR.UNKNOWN_UNIT` |
-| BIND-2 | 无 `±` 前缀（本阶段不支持公差表达） | `ANCHOR.UNSUPPORTED_SIGN` |
+| BIND-1 | 每个 numeric token 的单位后缀可被 `UNIT_TO_QUANTITY` 解析（§5.4 U-1/U-3） | `ANCHOR.UNKNOWN_UNIT` |
+| BIND-2 | 无 `±` 前缀（本阶段不支持公差表达；`±3.2MPa` / `± 3.2MPa` 均捕获 `±` 后判 FAIL） | `ANCHOR.UNSUPPORTED_SIGN` |
 | BIND-3 | identifier token 的 grammar 合法（§6） | `ANCHOR.INVALID_IDENTIFIER` |
-| BIND-4 | 白名单 token 按登记制匹配 | 不匹配 → `ANCHOR.UNANCHORED` |
-| BIND-5 | 每个 identifier token 的 fact_id 通过 `cdm.id.is_valid_fact_id()`（INV-11） | `ANCHOR.INVALID_FACT_ID` |
+| BIND-4 | 白名单 token 按 span containment 匹配（§8.4） | 不匹配 → `ANCHOR.UNANCHORED` |
+| BIND-5 | 每个 AnchorDeclaration.fact_id 通过 `cdm.id.is_valid_fact_id()`（INV-11） | `ANCHOR.INVALID_FACT_ID` |
 | BIND-6 | 同一 token 不出现多处绑定声明 | `ANCHOR.DUPLICATE_BINDING` |
+| BIND-7 | 每个 identifier token 必须被至少一个 AnchorDeclaration 覆盖（token span 包含于声明 token span 或文本相等），且 `normalized_identifier == parse_fact_id(fact_id).instance_key`（§6.3） | 未覆盖 → `ANCHOR.UNANCHORED`；instance_key 不等 → `ANCHOR.IDENTIFIER_BINDING_MISMATCH` |
 
-### 8.2 Stage E 级联 unit 判定
+说明：
+- BIND-7 恢复 04_REPORT_IR §41.2.3 / D-018 的「实例标识 token 同表绑定」冻结要求（v10 P0-4 核心判定中的「标识同表绑定」在 Stage D 无对应检查项，本条补齐）
+- 被 whitelist span 完全包含的 identifier token 豁免 BIND-7（§8.4）
 
-对每个数值 token，按以下优先级与 GroundTruthFact 比较：
+### 8.2 Stage E 级联 unit 判定（冻结）
+
+对每个数值 token（未经 whitelist 豁免），按以下优先级与 GroundTruthFact 比较：
 
 | 优先级 | 条件 | 结果 | 错误码 |
 | ---- | ---- | ---- | ---- |
@@ -363,11 +524,31 @@ ST 必须首置，[KCMPSBD] 为单点字符
 
 注：`quantity_kind` 由 token 的单位后缀通过 `UNIT_TO_QUANTITY` 查表得到。
 
+### 8.3 区间（range）token（R11 补回冻结）
+
+区间 / 近似表达（如「2.0～2.5m」「约 2.3m」）**不做整体锚定**：
+
+- 区间内每个数值 token 独立提取、独立绑定 fact_id（可各不相同）、独立值相等
+- 禁止用区间整体作为一次锚定
+
+（与 04_REPORT_IR §41.2.5 区间条款一致。）
+
+### 8.4 Whitelist span containment（R11 补回冻结）
+
+白名单豁免判定采用 **span containment**：
+
+```
+token 的 [char_start, char_end) ⊆ 某条登记白名单 pattern 的匹配 span
+    → 豁免（跳过 Stage E 级联判定，仍输出诊断记录）
+```
+
+- **部分重叠（相交但不包含）→ 不豁免** → 按正常判定（UNANCHORED / UNKNOWN_UNIT 等）
+- 示例：文本「GB 50292-2015」整体命中白名单 pattern，内部 numeric token `50292` / `2015` 的 span 均被包含 → 豁免
+- 被豁免的 identifier token 同步豁免 BIND-7
+
 ---
 
-## 9. FactDisplaySpec（v10 两层明确，§3.1 补充）
-
-§3.1 已明确两层关系。本节仅补充 Stage A 重复检查规则（v10 新增）：
+## 9. FactDisplaySpec 重复唯一性（冻结）
 
 ### 9.1 重复 fact_type → precondition_error
 
@@ -382,51 +563,90 @@ ST 必须首置，[KCMPSBD] 为单点字符
 
 ---
 
-## 10. ExpectedIssue matching（v9 冻结）
+## 10. ExpectedIssue matching（R1 恢复冻结）
 
-### 10.1 Rule-level 匹配
+### 10.1 Matching key（冻结）
 
-每个 ExpectedIssue 携带 `rule_id`，匹配时只考虑同 rule_id 的 ActualIssue。
+```
+matching key = (rule_id, fact_id)
+```
 
-### 10.2 两阶段匹配
+- **severity 不参与 matching**（仅随双方记录，用于报告分级）
+- **note 不参与 matching**
+
+### 10.2 两阶段匹配（冻结）
 
 | 阶段 | 条件 | 行为 |
 | ---- | ---- | ---- |
-| Phase 1: Exact | ActualIssue 的 rule_id + fact_id + severity 与 ExpectedIssue 完全相等 | 标记为 matched，不再参与 Phase 2 |
-| Phase 2: Wildcard | ExpectedIssue 无 fact_id（或 fact_id=None），同 rule_id 的 ActualIssue 任一可匹配 | 标记为 matched，不再参与后续匹配 |
+| Phase 1: Exact | ExpectedIssue.fact_id != None：ActualIssue 与 ExpectedIssue 的 **(rule_id, fact_id) 完全相等** | 标记 matched，双方进入对应 consumed 集合 |
+| Phase 2: Wildcard | ExpectedIssue.fact_id == None：同 rule_id 的任一**未被消费**的 ActualIssue 可匹配 | 标记 matched，双方进入对应 consumed 集合 |
 
-### 10.3 One-to-one 保证
+### 10.3 One-to-one 双向保证（R1 恢复冻结）
 
-`consumed_indices: set[int]` 记录已匹配的 ExpectedIssue 下标，不允许同一个 ExpectedIssue 被匹配两次。
+必须**分别维护**两个消费集合：
+
+```
+consumed_expected_indices: set[int]   # 每个 ExpectedIssue 至多匹配一个 ActualIssue
+consumed_actual_indices: set[int]    # 每个 ActualIssue 至多被一个 ExpectedIssue 消费
+```
+
+- **禁止只保护 ExpectedIssue 侧**
+- 已消费的 ActualIssue 不得再参与任何阶段的匹配
+- 已消费的 ExpectedIssue 不得再匹配任何 ActualIssue
+
+### 10.4 ExpectedIssue 不内部 deduplicate（保持）
+
+重复 ExpectedIssue（同 rule_id + fact_id 组合）→ Stage A precondition_error（§2.1 A-7）。matching 语义的恢复不改变该规则。
 
 ---
 
-## 11. ActualIssue 构造语义（v10 正式冻结）
+## 11. ActualIssue 构造语义（R2 恢复 identity 冻结 + 保持构造修复）
 
-### 11.1 Public constructor 禁止传入 identity / issue_id
+### 11.1 Identity 定义（恢复冻结，六元组，INV-17）
+
+```
+identity ≡ (
+    issue_type,        # identity[0] — 问题类型（由产出该 issue 的 Rule 判定逻辑给出）
+    location,          # identity[1] — 定位（渲染文本/表格坐标，如 rendered_segments[2]:char[15-20]）
+    fact_id,           # identity[2] — 绑定事实（可 None）
+    evaluation_id,     # identity[3] — 关联判定（可 None）
+    occurrence_id,     # identity[4] — 关联出现次（可 None）
+    table_aggregate,   # identity[5] — 表格聚合标识（可 None）
+)
+```
+
+- identity 顺序严格固定，不得增删改字段
+- **变更 identity 语义必须先在 07_DECISIONS.md 落新决策；禁止在契约修订中静默替换**
+- v10 曾将 identity 静默替换为 (rule_id, severity, category, fact_id, source)，本轮回归修复恢复冻结六元组
+
+### 11.2 Public constructor 禁止传入 identity / issue_id（保持 v10 修复）
 
 ```python
 @dataclass
 class ActualIssue:
     # ── Public constructor 接受的字段 ──
-    rule_id: str
-    severity: str
-    category: str
-    message: str
-    fact_id: Optional[str] = None
-    source: str = ""          # 错误来源位置（文本坐标）
+    rule_id: str                              # 归属 P0 Rule（不参与 identity）
+    severity: str                             # error | warning（不参与 matching，仅报告分级）
+    issue_type: str                           # identity[0]
+    location: str                             # identity[1]
+    message: str                              # 诊断信息（不参与 identity）
 
-    # ── 以下字段不在 public constructor 中（init=False） ──
+    fact_id: Optional[str] = None             # identity[2]
+    evaluation_id: Optional[str] = None       # identity[3]
+    occurrence_id: Optional[str] = None       # identity[4]
+    table_aggregate: Optional[str] = None     # identity[5]
+
+    # ── 以下字段不在 public constructor 中（init=False，保持 v10 修复） ──
     identity: tuple = field(init=False, repr=False)
     issue_id: str = field(init=False, repr=False)
 ```
 
 约束：
-- `identity` 和 `issue_id` 被声明为 `field(init=False)`，public constructor 不接受这两个参数
-- 若调用方尝试 `ActualIssue(identity=..., issue_id=...)`，Python dataclass 会抛出 `TypeError`（因为这两个参数不在 `__init__` 签名中）
-- identity 的构造在 `build()` classmethod 内部完成
+- `identity` 和 `issue_id` 声明为 `field(init=False)`，public constructor 不接受这两个参数
+- 调用 `ActualIssue(identity=..., issue_id=...)` → Python 抛出 `TypeError`（参数不在 `__init__` 签名中）
+- 唯一构造入口 = `build()`
 
-### 11.2 build() classmethod（唯一构造入口）
+### 11.3 build() classmethod（唯一构造入口，保持）
 
 ```python
 @classmethod
@@ -434,27 +654,40 @@ def build(
     cls,
     rule_id: str,
     severity: str,
-    category: str,
+    issue_type: str,
+    location: str,
     message: str,
     fact_id: Optional[str] = None,
-    source: str = "",
+    evaluation_id: Optional[str] = None,
+    occurrence_id: Optional[str] = None,
+    table_aggregate: Optional[str] = None,
 ) -> "ActualIssue":
-    # identity 由 build() 内部构造，外部无法控制
-    identity = (rule_id, severity, category, fact_id, source)
+    # identity 由 build() 内部按 §11.1 冻结六元组构造，外部无法控制
+    identity = (
+        issue_type,
+        location,
+        fact_id,
+        evaluation_id,
+        occurrence_id,
+        table_aggregate,
+    )
     instance = cls(
         rule_id=rule_id,
         severity=severity,
-        category=category,
+        issue_type=issue_type,
+        location=location,
         message=message,
         fact_id=fact_id,
-        source=source,
+        evaluation_id=evaluation_id,
+        occurrence_id=occurrence_id,
+        table_aggregate=table_aggregate,
     )
     object.__setattr__(instance, "identity", identity)
     object.__setattr__(instance, "issue_id", _compute_issue_id(identity))
     return instance
 ```
 
-### 11.3 issue_id 计算（INV-10）
+### 11.4 issue_id 计算（INV-10，保持）
 
 ```python
 def _compute_issue_id(identity: tuple) -> str:
@@ -464,11 +697,9 @@ def _compute_issue_id(identity: tuple) -> str:
 
 约束：
 - 禁止 Python `hash()`（结果不稳定、进程间不同）
-- identity tuple 顺序必须严格固定（rule_id → severity → category → fact_id → source）
+- identity 六元组顺序严格固定（issue_type → location → fact_id → evaluation_id → occurrence_id → table_aggregate）
 
-### 11.4 外部构造检查
-
-若测试或实现中出现以下模式，视为契约违规：
+### 11.5 外部构造检查（保持）
 
 ```python
 # ❌ 禁止：外部传入 identity
@@ -481,16 +712,16 @@ issue = ActualIssue(rule_id="ANCHOR.BINDING", issue_id="abc123")
 issue = ActualIssue.build(
     rule_id="ANCHOR.BINDING",
     severity="error",
-    category="QUANTITY_KIND_MISMATCH",
+    issue_type="quantity_kind_mismatch",
+    location="rendered_segments[2]:char[15-20]",
     message="token quantity_kind mismatch",
     fact_id="fact:component.K001.concrete_strength",
-    source="rendered_segments[2]:char[15-20]",
 )
 ```
 
 ---
 
-## 12. frozen_round（v9 冻结）
+## 12. frozen_round（冻结）
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
@@ -511,17 +742,34 @@ def frozen_round(value: Any, decimals: int) -> float:
 
 ---
 
-## 13. 7 P0 Rules（v9 冻结，不增删）
+## 13. 7 P0 Rules（冻结，不增删）
 
 | # | Rule ID | 含义 | 核心判定 |
 | ---- | ---- | ---- | ---- |
-| P0-1 | `VALUE.CONSISTENCY` | 报告数值与 Ground Truth 一致 | frozen_round(token_value, G3.precision) == G3.value |
-| P0-2 | `TABLE.INTERNAL` | 表格内部数值自洽（合计、统计量与分项一致） | 程序计算值 vs 报告声明值 |
-| P0-3 | `LOGIC.CONSISTENCY` | 判定逻辑与 ExpectedEvaluationSnapshot 一致 | Validator 不执行 Criterion grammar，直接比对 snapshot |
-| P0-4 | `ANCHOR.BINDING` | 每个数字锚定正确 | Unit 解析 + quantity_kind 级联 + 标识同表绑定 |
+| P0-1 | `VALUE.CONSISTENCY` | 报告数值与 Ground Truth 一致 | frozen_round(token_value, snapshot.decimals) == G3.value（精度链见下） |
+| P0-2 | `TABLE.INTERNAL` | 表格内部数值自洽（合计、统计量与分项一致） | 程序计算值 vs 报告声明值（输入 = StructuredTable，§4） |
+| P0-3 | `LOGIC.CONSISTENCY` | 判定逻辑与 expected_evaluations 一致 | Validator 不执行 Criterion grammar，按 evaluation_id 确定性查找并比对（§3.4） |
+| P0-4 | `ANCHOR.BINDING` | 每个数字锚定正确 | Unit 解析 + quantity_kind 级联 + 标识同表绑定（§8） |
 | P0-5 | `CONCLUSION.DIRECTION` | 结论方向与 GroundTruthConclusion.direction 一致 | 字符串精确匹配（case-sensitive） |
 | P0-6 | `CONCLUSION.COVERAGE` | 结论覆盖全部检测项 | required_evaluation_ids ⊆ conclusion.covers[] |
-| P0-7 | `EXPECTED.HIT` | ExpectedIssues 被全部命中 | 两阶段 matching + consumed_indices 去重 |
+| P0-7 | `EXPECTED.HIT` | ExpectedIssues 被全部命中 | 两阶段 matching（(rule_id, fact_id) exact + rule-level wildcard）+ 双向 one-to-one（§10） |
+
+**P0-1 精度唯一来源链（R4 恢复冻结，INV-19）**：
+
+```
+Anchor.fact_id
+    ↓ derive_fact_type()：parse_fact_id(fact_id) 的第一段 + "." + 第三段
+fact_type
+    ↓ fact_display_spec[fact_type]
+FactDisplaySpecSnapshot
+    ↓
+decimals
+```
+
+- P0 numeric comparison **唯一使用 snapshot.decimals**
+- **G3.precision 不参与 Step 7-E P0 numeric comparison**（仅为 Step 7-D 数据字段，INV-2 只读）
+- snapshot 缺该 fact_type 条目 → precondition_error（missing display spec，v9 冻结保持）
+- 禁止形成 `FactDisplaySpec.decimals` + `G3.precision` 双精度真相源
 
 ---
 
@@ -529,18 +777,22 @@ def frozen_round(value: Any, decimals: int) -> float:
 
 ### 14.1 必须覆盖的反例
 
-v10 冻结了 8 个待闭环项，实现时必须为每个反例编写独立测试用例：
-
 | # | 反例类别 | 测试重点 |
 | ---- | ---- | ---- |
 | T-1 | Counting | applicable_rule_count = 0 时 CaseStatus = NOT_EVALUABLE；applicable_rule_count < 7 时仍然 PASS |
-| T-2 | Unit Registry | UNIT_TO_QUANTITY dict 完整且每个 value ∈ QUANTITY_KINDS；unknown unit → UNKNOWN_UNIT |
+| T-2 | Unit Registry | loaded mapping == 冻结 dict（缺 / 多 / 错 → precondition_error）；unit lexer 反例：12.5N/mm²→N/mm²/pressure、12.5kN/m²→kN/m²/pressure、32.5%→%/ratio、32.4psi / 32.4abc→UNKNOWN_UNIT |
 | T-3 | FactDisplaySpec 两层 | TemplateSpec dict 含 decimals+unit；Snapshot 只含 decimals；Step 7-E 不 import unit 字段 |
-| T-4 | ActualIssue constructor | ActualIssue(identity=...) → TypeError；ActualIssue(issue_id=...) → TypeError；ActualIssue.build() 正常工作 |
+| T-4 | ActualIssue constructor | ActualIssue(identity=...) → TypeError；ActualIssue(issue_id=...) → TypeError；build() 正常；identity 六元组内容与顺序正确 |
 | T-5 | FactDisplaySpec 重复 | JSON 数组含重复 fact_type → precondition_error；dict 含唯一 key → 正常 |
-| T-6 | Tokenizer candidate | ST001 numeric=NONE；S-3 numeric=3；overlap 消解 identifier 优先 |
-| T-7 | renderable_fact_types schema | frozenset[str] 正常；list[str] → TypeError；空集合合法；非法 fact_type → precondition_error |
-| T-8 | 冻结正则 | NUMERIC_TOKEN_RE 和 IDENTIFIER_TOKEN_RE 逐段验证所有反例 |
+| T-6 | Tokenizer candidate | ST001 numeric=NONE；S-3 numeric=3；H2O / A4 / ISO9001 / GB50292 numeric=NONE（前置字母阻断） |
+| T-7 | renderable_fact_types | frozenset[str] 正常；list[str] → TypeError；空集合合法；非法 fact_type → precondition_error；allowed-to-render 语义（actual-rendered 不进入 TrustedInput） |
+| T-8 | 冻结正则 | NUMERIC_TOKEN_RE 和 IDENTIFIER_TOKEN_RE 逐段验证所有反例（含单位组完整捕获） |
+| T-9 | Matching | severity / note 不参与匹配；(rule_id, fact_id) exact + rule-level wildcard；双向 one-to-one（单条 ActualIssue 被两条 ExpectedIssue 争用 → 仅第一条成功） |
+| T-10 | identity / issue_id | 相同 identity → 相同 issue_id；六元组任一字段变化 → issue_id 变化 |
+| T-11 | Precision truth source | G3.precision 与 snapshot.decimals 不一致时，P0-1 按 snapshot.decimals 判定；snapshot 缺条目 → precondition_error |
+| T-12 | Stage B | trusted_input.applicable_rules 之外无法使规则变为 applicable；∉ → NOT_EVALUABLE |
+| T-13 | ExpectedEvaluations | 重复 evaluation_id → precondition_error；多 Evaluation 全部可按 id 确定性查找 |
+| T-14 | Range / Whitelist | 区间逐 token 锚定；span 部分重叠不豁免；完全包含才豁免 |
 
 ### 14.2 实现阶段划分
 
@@ -549,13 +801,13 @@ Phase 1: 契约自检（contracts.py）
     → 数据结构 + 枚举 + 构造函数语义
 
 Phase 2: 词法层（numeric_parser.py + identifier_parser.py）
-    → regex + tokenize + overlap 消解
+    → regex + tokenize + overlap 消解 + unit 完整捕获
 
 Phase 3: 单元层（unit_registry.py + anchor.py）
-    → UNIT_TO_QUANTITY + quantity_kind 级联
+    → UNIT_TO_QUANTITY exact equality + quantity_kind 级联
 
 Phase 4: 比对层（compare.py + actual_issues.py）
-    → frozen_round + issue matching + identity 构造
+    → frozen_round + 双向 one-to-one matching + identity 构造
 
 Phase 5: 状态机（accuracy_validator.py）
     → 五阶段 + CaseStatus 聚合
@@ -565,21 +817,34 @@ Phase 5: 状态机（accuracy_validator.py）
 
 ## 结尾判定：READY
 
-**8 项闭环全部达成**：
+**十项回退全部恢复**：
 
-| # | 闭环项 | 状态 | 位置 |
-| ---- | ---- | ---- | ---- |
-| 一 | applicable/evaluable 计数明确定义 | ✅ | §1.3 |
-| 二 | Unit Registry 完整 UNIT_TO_QUANTITY | ✅ | §3.2 / §7 |
-| 三 | D-025 两层明确 | ✅ | §3.1 / §9 |
-| 四 | ActualIssue constructor 禁止外部 identity | ✅ | §11 |
-| 五 | FactDisplaySpec 重复 → precondition_error | ✅ | §2.1 A-2 / §9.1 |
-| 六 | tokenizer candidate 与 regex 对齐 | ✅ | §5.3 |
-| 七 | renderable_fact_types schema 明确 | ✅ | §3.3 |
-| 八 | 文档版本卫生 | ✅ | 标题/正文统一为 v10，纯净无元话语 |
+| # | 回退项 | 恢复位置 |
+| ---- | ---- | ---- |
+| 一 | ExpectedIssue matching → (rule_id, fact_id) + 双向 one-to-one | §10 |
+| 二 | ActualIssue identity → 冻结六元组 | §11 |
+| 三 | unit lexer 完整捕获注册表全部键 | §5.1 / §5.4 |
+| 四 | P0-1 精度唯一来源 → Snapshot.decimals | §13 |
+| 五 | Stage B → 只读 membership test | §2.2 |
+| 六 | expected_evaluations → dict 多 Evaluation 结构 | §3 / §3.4 / A-10 |
+| 七 | Unit Registry → exact equality（hash 声明删除） | §3.2 / A-4 |
+| 八 | identifier → scope_class 映射表删除 | §6.3 |
+| 九 | renderable_fact_types → allowed-to-render | §3.3 |
+| 十 | SystemOutput → 结构表达力恢复 | §4 |
 
-**所有既有不变量保持**：INV-1 至 INV-15 共 15 条，全部明确声明。
+**补充恢复（自检发现，属既有冻结基线）**：
+- range 逐 token 锚定（§8.3）与 whitelist span containment（§8.4）——v10 静默丢失，本次补回
+- §5.3 表 H2O / A4 / ISO9001 / GB50292 四行、§6.2 C30 边界——恢复「candidate 描述与 regex 一致」
+- BIND-7 标识同表绑定——恢复 04_REPORT_IR §41.2.3 / D-018 冻结要求
 
-**Step 7-E Coding Contract v10 判定：READY**
+**READY 条件核对**：
 
-实现可以开始。
+| 条件 | 结果 |
+| ---- | ---- |
+| 所有回退全部恢复 | ✅（R1–R10） |
+| 所有 Unit lexer 反例闭合 | ✅（12.5N/mm² / 12.5kN/m² / 32.5% / 32.4psi / 32.4abc，§5.4） |
+| 所有 truth source 唯一 | ✅（precision / applicability / unit registry / renderable 各单一来源） |
+| SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4） |
+| 没有重新设计其他部分 | ✅（CaseStatus 聚合 / ST001 / S-3 / ±3.2MPa / ± 3.2MPa / frozen_round / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
+
+**Step 7-E Coding Contract v10（回归修复版）判定：READY**
