@@ -1,7 +1,7 @@
 # Step 7-E Accuracy Validator — Coding Contract v10（回归修复版）
 
 > 版本：v10（回归修复版）
-> 状态：READY
+> 状态：NOT READY（B5：TABLE-NUMERIC-BINDING 确定性可执行性缺口，待最小修复）
 >
 > 本文档冻结 Step 7-E Accuracy Validator 的完整编码契约。
 > 本轮为回归审计（REGRESSION FOUND）后的**恢复轮**：只恢复被意外破坏的既有冻结契约。
@@ -28,6 +28,7 @@
 > | R15 | B3 修复：ActualIssue build-only 守卫（__post_init__ + object.__new__ build） | §11 |
 > | R16 | 旧契约遗漏恢复：applicable_rules ⊆ P0_RULE_IDS（A-11；未知 Rule → precondition_error） | §2.1 / §2.2 / §13 / §0 |
 > | R17 | B4 修复：numeric token → fact_id 显式绑定闭环（BIND-8 + §8.2 正式绑定与判定链 + INV-24 + T-18） | §8.1 / §8.2 / §0 / §14 |
+> | R18 | B5 边界裁决：TABLE-NUMERIC-BINDING 升级 CONFIRMED BLOCKER（cell 级绑定不足以覆盖 §41.2.1/§41.2.2 逐 token 判定）→ 契约回退 NOT READY | §8.1 作用域注 / 结尾扫描第 6 项 / 结尾判定 |
 
 ---
 
@@ -536,7 +537,7 @@ normalized_identifier == parse_fact_id(anchor.fact_id).instance_key
 - 被 whitelist span 完全包含的 identifier token 豁免 BIND-7（§8.4）
 - BIND-8 恢复 04_REPORT_IR §41.2.2 / R2 的冻结要求（「每一个数字 token 都必须显式绑定到一个 fact_id」）——修复「numeric token → fact_id 无正式来源」的可执行性缺口（B4）；仍属 P0-4 ANCHOR.BINDING，不新增 P0 Rule
 - BIND-8 与 BIND-7 使用同一冻结 span 规则；部分重叠（相交但不包含）**不算覆盖**
-- BIND-8 作用域 = Validator 对 rendered_segments（prose / 图注）tokenize 出的 numeric token；structured_tables 单元格 numeric token 的逐 token 绑定机制为已登记候选（结尾扫描第 6 项），本轮不设计
+- BIND-8 作用域 = Validator 对 rendered_segments（prose / 图注）tokenize 出的 numeric token；structured_tables 单元格侧的逐 token 绑定经 B5 边界裁决确认为 **CONFIRMED BLOCKER**（cell 级 fact_id 不足以覆盖 §41.2.1 / §41.2.2 逐 token 判定，见结尾扫描第 6 项与 B5 修复边界），待下轮最小修复
 - 由此 §8.2 比较链获得正式输入：token → 唯一 fact_id → G3
 
 ### 8.2 Stage E：Numeric Token 绑定与判定链（B4 修复，正式闭环）
@@ -959,7 +960,21 @@ Phase 5: 状态机（accuracy_validator.py）
 
 | # | 阻塞项 | 修复位置 | 状态 |
 | ---- | ---- | ---- | ---- |
-| B4 | Numeric Token → fact_id 显式绑定缺失 | §8.1 BIND-8 / §8.2 正式绑定与判定链 / INV-24 / T-18 | ✅ 闭合 |
+| B4 | Numeric Token → fact_id 显式绑定缺失 | §8.1 BIND-8 / §8.2 正式绑定与判定链 / INV-24 / T-18 | ✅ 闭合（rendered_segments 侧） |
+
+**边界裁决（B5，本轮）**：
+
+| 项 | 裁决 | 依据 | 状态 |
+| ---- | ---- | ---- | ---- |
+| TABLE-NUMERIC-BINDING | 裁决为 **B：必须支持 cell 内逐 numeric token 独立 fact_id 绑定**。cell 级单 fact_id 仅覆盖单 token cell；多 token cell / 区间 cell / identifier+numeric cell 均无法表达，不满足 §41.2.1 / §41.2.2 / R2 / §41.2.5 | 冻结依据**在盘可验证**：04_REPORT_IR §41.2.1（自由文本 cell 走 §41.2 锚定）+ §41.2.2（逐 token 判定，Table 单元格在范围）+ R2（token 级显式绑定）+ R3（identifier 同表绑定）+ §41.2.5（区间逐 token 独立绑定）+ R5（校验对象是渲染产物） | **CONFIRMED BLOCKER** → 契约回退 NOT READY |
+
+**B5 修复边界（下一轮执行，本轮不设计）**：
+
+- 必须支持：cell 内逐 numeric token 独立 fact_id 绑定（多 token cell / 区间 cell / identifier+numeric cell 三类场景）
+- 必须复用：AnchorDeclaration 结构原样（token / fact_id / char_start / char_end）；BIND-7/8 同一 span 规则（token span ⊆ 声明 span 或文本相等，部分重叠不算覆盖）；现有 ANCHOR.* 错误码（UNANCHORED / INVALID_FACT_ID / DUPLICATE_BINDING）；仍属 P0-4，不新增 P0 Rule；Fix 3 不变（Validator 对 cell raw_text 自行 tokenize）
+- 必须保持：单 numeric token cell 的现有表达路径（cell fact_id 不强制迁移）；BIND-8 rendered_segments 侧语义零改动；§8.2 判定链零改动
+- 禁止：新增 P0 Rule；修改 04_REPORT_IR / Step 7-D；重新设计 RenderedSegment 侧；引入 LLM；扩大 Validator 职责
+- 待决策点（下一轮由用户裁决，本轮不预设）：绑定声明在 Table 侧的挂载位置（per-cell 声明列表 vs 表级声明集合）——最小修复的唯一设计自由度
 
 **旧契约遗漏恢复与扫描（本轮）**：
 
@@ -967,7 +982,7 @@ Phase 5: 状态机（accuracy_validator.py）
 | ---- | ---- | ---- | ---- |
 | R16 | applicable_rules ⊆ P0_RULE_IDS；未知 / 非 7 P0 rule_id → precondition_error；不静默删除、不自动补入、不修改 trusted_input | §2.1 A-11 / §2.2 / §13 / INV-23 / T-17 | ✅ 闭合 |
 
-旧契约遗漏扫描（5 项）+ B4 轮新增候选（第 6 项）：以下各项无法从磁盘证据确证为**确定性回归 / 确定性冲突**，一律标记 **REGRESSION CANDIDATE / EXECUTABILITY CANDIDATE**、不直接修改（第 6 项按 B4 轮指令明确不重新设计 TableCell）；待冻结登记确认——确认任一成立即回退 NOT READY 并在下轮恢复：
+旧契约遗漏扫描（5 项）+ 第 6 项（B4 轮新增候选、B5 轮边界裁决升级为 **CONFIRMED BLOCKER**）：第 1–5 项无法从磁盘证据确证为确定性回归，标记 CANDIDATE、不直接修改；第 6 项冻结依据**在盘可验证**（04_REPORT_IR §41.2.1 / §41.2.2 / R2 / §41.2.5），经 B5 边界裁决确认为**确定性可执行性缺口**：
 
 | # | 扫描项 | 是否为既有冻结规则 | v10 当前状态 | 是否确定回归 | 是否修改 | 最终结论 |
 | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
@@ -976,7 +991,7 @@ Phase 5: 状态机（accuracy_validator.py）
 | 3 | TrustedTableSpec precondition | 指认为既有约束；无法独立证实 | trusted_table_specs 出现在 TrustedInput 但 TableSpecSnapshot 类型未定义；Stage A 无对应检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认；另注：类型未定义本身构成 P0-2 可执行性缺口（与 B 轮 SystemOutput 同类），确认后一并处理 |
 | 4 | renderable_fact_types ⊆ fact_display_spec.keys() | 指认为既有约束；无法独立证实 | 存在**部分替代**：A-9（元素 ∈ CDM fact_type 注册表）+ P0-1 惰性检查（snapshot 缺条目 → precondition_error，标注 v9 冻结保持） | 否——REGRESSION CANDIDATE（部分覆盖 ≠ 明确替代） | 否 | 待确认；若确认，需先裁决「Stage A 集合级校验」与「惰性检查」的替代关系 |
 | 5 | G3.unit ∈ UNIT_TO_QUANTITY（或 None）合法性 | 指认为既有约束；无法独立证实（Step 7-D validate_ground_truth_fact 亦不检查 unit） | A-8 仅校验 fact_id 格式；G3.unit 无注册表合法性检查 | 否——REGRESSION CANDIDATE | 否 | 待冻结登记确认 |
-| 6 | TABLE-NUMERIC-BINDING（TableCell 级 numeric token 逐 token 绑定） | 04_REPORT_IR §41.2.1 明确将 Table 单元格 / 表标题 / 表注纳入锚定范围（冻结依据明确） | TableCell.fact_id 为 cell 级单值：单 numeric token 的 cell 可绑定；一个 cell 含多个 numeric token（尤其各属不同 fact）时无法逐 token 绑定（B4 仅闭环 rendered_segments 侧，§8.1 BIND-8 作用域注明） | 否——REGRESSION CANDIDATE / EXECUTABILITY CANDIDATE | 否（B4 轮指令：不重新设计 TableCell） | 待裁决；若确认需逐 token 绑定 → 下轮以最小扩展恢复（cell 内 token 级绑定表达），本轮不擅自设计 |
+| 6 | TABLE-NUMERIC-BINDING（TableCell 级 numeric token 逐 token 绑定） | **是——冻结依据在盘可验证**：04_REPORT_IR §41.2.1（Table 单元格 / 表标题 / 表注纳入锚定；自由文本 cell 走 §41.2 锚定路径）+ §41.2.2（**逐 token 判定**，Table 单元格在提取范围）+ R2（token 级显式绑定）+ §41.2.5（区间逐 token 独立绑定） | TableCell.fact_id 为 cell 级单值：单 numeric token cell 可表达；**多 numeric token cell（"2.3m / 2.5m" 各属不同 fact）、区间 cell（"2.0～2.5m" min/max 可各属不同 fact）、identifier+numeric cell（"K001：32.4MPa" 需 .id 与 concrete_strength 两个绑定）均无法表达** | **是——确定性可执行性缺口（B5 边界裁决）**；v9→v10 回归属性无法确证但不再重要（依据为在盘冻结文档） | 否（本轮为裁决轮，不设计 TableCell schema） | **CONFIRMED BLOCKER B5**：必须支持 cell 内逐 numeric token 独立 fact_id 绑定；最小修复边界见结尾「B5 修复边界」；修复前契约 NOT READY |
 
 **内部交叉检查（B1–B3 + B4 修复轮，零新冲突）**：
 
@@ -994,7 +1009,7 @@ Phase 5: 状态机（accuracy_validator.py）
 | range / whitelist span containment 保持 | ✅ | §8.3 / §8.4（B4 未触碰；BIND-8 复用同一 span 规则） |
 | ST001 / S-3 行为保持 | ✅ | §5.3（B4 未触碰标识 regex） |
 | ±3.2MPa / ± 3.2MPa 保持 | ✅ | §5.1 `(±\s*)?` + BIND-2（B4 未触碰 ± 组） |
-| P0-4 numeric binding 闭环 | ✅ | §8.1 BIND-8 + §8.2 判定链（B4 本轮补齐） |
+| P0-4 numeric binding 闭环 | ✅（rendered_segments 侧）/ ✗（Table 侧 = B5 CONFIRMED BLOCKER） | §8.1 BIND-8 + §8.2 判定链（B4 补齐 rendered_segments 侧；Table 侧待 B5 修复） |
 | P0-4 identifier binding 闭环 | ✅ | §8.1 BIND-7（R12 补齐，B4 未触碰） |
 | P0-4 whitelist exemption 闭环 | ✅ | §8.4（BIND-8/BIND-7 同样依赖 whitelist 豁免） |
 | P0-4 range token 行为 | ✅ | §8.3（区间逐 token 独立锚定，B4 未触碰） |
@@ -1007,14 +1022,15 @@ Phase 5: 状态机（accuracy_validator.py）
 | ---- | ---- |
 | 所有回退全部恢复 | ✅（R1–R12） |
 | B1–B3 全部闭合 | ✅ |
-| B4 numeric-token binding 完整闭环 | ✅（BIND-8 + §8.2 判定链 + INV-24 + T-18 Case A–G） |
+| B4 numeric-token binding 完整闭环 | ✅（rendered_segments 侧：BIND-8 + §8.2 判定链 + INV-24 + T-18 Case A–G） |
+| Table 冻结载体覆盖（§41.2.1 / §41.2.2 逐 token 判定） | ✗ **CONFIRMED BLOCKER B5**（cell 级绑定不足，待下轮按「B5 修复边界」最小修复） |
 | applicable_rules ⊆ P0_RULE_IDS 修复完成 | ✅（R16 / A-11 / INV-23 / T-17） |
-| 无未处理的确定性回归 | ✅（遗漏扫描 6 项均为 CANDIDATE，非确定性回归；第 6 项 TABLE-NUMERIC-BINDING 已按 B4 轮指令标记为 EXECUTABILITY CANDIDATE，不重新设计 TableCell） |
+| 无未处理的确定性回归 | ✗（第 6 项经 B5 裁决确认为确定性可执行性缺口；第 1–5 项仍为 CANDIDATE） |
 | 所有 Unit lexer 反例闭合 | ✅（8/8，§5.4，含 B1 新增三例） |
 | 所有 truth source 唯一 | ✅（precision / applicability / unit registry / renderable 各单一来源） |
-| SystemOutput schema 可执行 | ✅（RenderedSegment / AnchorDeclaration / StructuredTable / TableCell，§4；TableCell 多 numeric token 场景已登记候选） |
-| 没有重新设计其他部分 | ✅（B4 仅补 BIND-8 + §8.2 判定链；不新增 P0 Rule、不改 AnchorDeclaration 结构、不改 ActualIssue identity / ExpectedIssue matching / Unit Registry / identifier scope / ± 组 / 标识 regex / frozen_round 数学语义 / 7 P0 / Step 7-D 只读 / known_issues 只读 / ExpectedIssue 不去重 / 不执行 Criterion grammar / 不做 build gate / 不 import Step 7-F+ / 不引入 LLM 全部保持） |
+| SystemOutput schema 可执行 | ✅（rendered_segments 侧完整；TableCell 多 numeric token 场景 = B5 缺口） |
+| 没有重新设计其他部分 | ✅（B5 为裁决轮：仅升级第 6 项分类 + 登记修复边界，未设计 schema、未改 BIND-8 核心语义、未改任何既有不变量） |
 
-B4 修复期间本文档状态为 NOT READY；B4 闭合、P0-4 完整闭环、交叉检查零新冲突后，最终状态如下。
+B5 边界裁决确认 TABLE-NUMERIC-BINDING 为确定性可执行性缺口 → 契约回退 NOT READY；待下一轮按「B5 修复边界」完成最小修复后重新判定。
 
-**Step 7-E Coding Contract v10 = READY**
+**Step 7-E Coding Contract v10 = NOT READY**
