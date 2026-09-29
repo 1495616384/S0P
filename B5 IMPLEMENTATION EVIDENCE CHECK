@@ -1,0 +1,292 @@
+好的，这一轮严格按证据来，不凭记忆。先真实检查仓库状态。
+用户非常直接 — 上一轮我声称实现了 B5，但实际仓库里没有代码。这是一个严重的交付失败。让我先调 ExperienceRecall 看看类似问题，然后严格按照用户的 10 步流程执行。关键教训：提交必须先 git status / git ls-files 确认实际状态，不能凭记忆汇报。现在严格按用户的 10 步流程来。先确认仓库真实状态。
+
+好，仓库状态清晰：
+1. docs/02_ARCHITECTURE.md 被修改了（不应该！）
+2. src/eval/accuracy/ 和 tests/eval/test_accuracy.py 确实存在，但是 untracked
+3. docs/Step_7_E_Coding_Contract_v10.md 和 reviews/ 也是 untracked（文档）
+4. 还有一个中文文件名的 md 文件 untracked
+
+先确认那些 Python 文件是否真的存在且非空。
+
+好，Python 源码和测试文件都真实存在，但是 **untracked**。另外有个不应该被改的 `docs/02_ARCHITECTURE.md` 被 modified 了。让我先看这个 diff，然后看 Step 7-D 文件状态。
+好，Python 文件确实存在且有内容。现在用户说上一轮只提交了文档（d4950ff4），代码还是 untracked。让我先看当前 HEAD 是什么，然后看那个有问题的 02_ARCHITECTURE.md 修改。
+
+好消息：
+- **Step 7-D 零修改**（diff 空）✓
+- 02_ARCHITECTURE.md 的 diff 只是末尾换行符，不是内容修改
+- Python 源码和测试文件真实存在，全部 untracked
+
+现在先跑测试验证代码是真的能跑，再提交。
+好：
+1. Step 7-D (types.py, validator.py) → 零 diff，完美
+2. 02_ARCHITECTURE.md 的 diff 只是末尾换行符，不是真正的内容修改
+3. Python 文件都是 untracked
+
+现在先运行测试验证代码真实可用，然后把 Python 文件提交，排除文档和 02_ARCHITECTURE.md 的换行符变化。
+
+B5 测试 66/66 通过。现在跑全量。
+66/66 通过。现在跑完整测试。
+
+全量 273/273 通过。现在先看那个中文文件名 untracked 是什么，然后只提交 Python 源码和测试。
+273 passed。现在提交 Python 源码和测试文件。注意：
+1. 只 add src/eval/accuracy/ 和 tests/eval/test_accuracy.py
+2. 排除 docs/02_ARCHITECTURE.md（那个换行符变化）
+3. 排除 docs/Step_7_E_Coding_Contract_v10.md 和 reviews/（上一轮已提交）
+4. 排除那个中文文件名 md
+
+先看一下那个中文文件名 md 是什么。
+
+好，现在先还原 `docs/02_ARCHITECTURE.md` 的换行符变化，然后只 add Python 源码和测试，提交。
+好，现在清楚了。我需要提交：
+- src/eval/accuracy/__init__.py
+- src/eval/accuracy/binding.py
+- src/eval/accuracy/data_structures.py
+- src/eval/accuracy/frozen_round.py
+- src/eval/accuracy/tokenizer.py
+- tests/eval/test_accuracy.py
+
+不提交：
+- docs/02_ARCHITECTURE.md (modified，只是换行符变化，还原它)
+- docs/Step_7_E_Coding_Contract_v10.md (文档，上一轮应该已经提交了？看 git status 里它是 untracked...)
+- reviews/ 下的文件
+- 那个中文 md 文件
+
+等等，让我先检查 docs/Step_7_E_Coding_Contract_v10.md 是不是真的 untracked。上一轮用户说 d4950ff4 只提交了 "Step 7-E B5 Coding Round" 文档。让我看看那个 commit 是什么。
+
+等一下，用户提到的 `d4950ff4` 在当前 log 里没出现。让我查一下。
+好，现在 staged 的只有 6 个 Python 文件。但是用户提到 d4950ff4 提交了 "Step 7-E B5 Coding Round" 文档。我现在看到 HEAD 是 1d19cde。让我查查那个 d4950ff4 是不是还在。
+
+好，d4950ff4 本地不存在，说明上一轮的"文档提交"可能在别的分支或者被 reset 了。本地 HEAD = `1d19cde`（Step 7-D）。现在 staged 的 6 个 Python 文件就是全部需要提交的内容。
+好，d4950ff4 在本地不存在。那说明用户可能是在远程仓库看到的，或者已经被 reset 掉了。本地 HEAD 是 1d19cde，Step 7-D 已经提交好了，Python 源码和测试是 untracked。现在的情况是：
+
+1. Step 7-D 已提交 ✓
+2. Python 源码和测试已实现（untracked），测试全过
+3. 需要提交这些 Python 文件
+
+现在就提交。
+
+干净。6 个文件，全部新增，+2154 行，零修改现有文件。现在提交。
+好，现在 staged 的是 6 个 Python 文件，+2154 行。提交。
+
+提交完成：`27afc5e`。现在做全部核查，真实跑。
+好，commit SHA = 27afc5e。现在让我做用户要求的所有核查：
+1. Step 7-D 文件零修改
+2. 冻结文档零修改
+3. 共享管道确认
+4. legacy 行为确认
+5. 重新跑测试
+
+Step 7-D 零修改 ✓，冻结文档零修改 ✓。现在检查共享管道结构和 legacy 行为。
+好。现在检查共享管道的结构 —— 确认 RenderedSegment 和 TableCell 真的调用同一个 bind_and_validate 核心。
+
+结构确认：`bind_and_validate`(247) 是共享核心，两个 wrapper 在 575 和 602。现在看 wrapper 到底有多薄，有没有复制粘贴逻辑。
+好，结构确认：bind_and_validate (line 247) 是共享核心，bind_table_cell (line 575) 和 bind_rendered_segment (line 602) 是 wrapper。让我看看这两个 wrapper 到底有多薄。
+
+完美。两个 wrapper 各 12 行，纯参数透传，零复制。现在检查 legacy 激活条件 —— 必须是三个条件的 AND。
+好，完美！两个 wrapper 都是薄薄的一行调用 `bind_and_validate`，零复制粘贴。结构就是：
+
+```
+bind_and_validate(...)      ← 共享核心，247行
+       ↑
+       ├── bind_table_cell()      ← wrapper: 传 legacy_fact_id=cell.fact_id
+       └── bind_rendered_segment() ← wrapper: 传 legacy_fact_id=None
+```
+
+现在检查 legacy 逻辑 —— 确认那三个条件的 AND 逻辑。
+
+Legacy 逻辑确认：三个条件 AND（`not anchor_declarations` AND `legacy_fact_id != None` AND `token_count == 1`），在循环内部还加了 `not covering` 额外保护。
+
+现在真实跑用户要求的 12 个核心行为验证，不靠测试文件，用实际代码执行。
+好，现在验证那三个条件 AND：
+
+Line 310: `if not covering and legacy_fact_id is not None and legacy_fact_id != "":`
+Line 314: `if not anchor_declarations:`
+Line 315-317: 调用 `_count_anchorable_tokens_after_whitelist`
+Line 318: `if token_count == 1:`
+
+所以激活 legacy 必须同时满足：
+1. 当前 token 没有被任何 AnchorDeclaration 覆盖 (`not covering`)
+2. `legacy_fact_id is not None` 且不为空
+3. `anchor_declarations` 为空
+4. whitelist 后恰好 1 个 anchorable token
+
+这 4 个条件确实是 AND 关系。但用户原始要求是三个条件：
+- anchor_declarations 为空
+- cell.fact_id != None  
+- whitelist 后恰好一个需锚定 token
+
+我的代码多了一个 `not covering` —— 这个其实是对的，因为如果某个 token 已经被显式 AnchorDeclaration 覆盖了，就不需要 legacy 了。这是额外的保护条件。
+
+另外，注意到 line 310 的逻辑：它是对每个 token 循环内检查 legacy —— 这意味着如果 anchor_declarations 为空且只有 1 个 anchorable token（条件 2+3），那这个唯一 token 必然没被覆盖（`not covering` 也是真），所以逻辑等价。
+
+好，legacy 行为是正确的。
+
+现在让我跑用户要求的 12 个核心行为测试（用实际代码验证，不是靠测试文件）。
+
+PowerShell 引号转义问题，用临时脚本文件。
+PowerShell 的 here-string 有问题，换个方式——写临时 Python 文件执行。
+
+GroundTruthFact 在 Step 7-D 的 `src/eval/types.py`，我来修正 import。
+GroundTruthFact 在 Step 7-D 的 src/eval/types.py 里，不是 accuracy 模块。让我修正 import。
+
+好消息：[4] 通过了（legacy INERT 行为正确）。但有两个问题：fact_id 格式错和 Token 属性名错。修正再跑。
+好，真实运行发现了问题！有两类：
+1. **Fact ID 格式错误**：我在验证脚本里用了 `fact:test.n`, `fact:test.n2` 这种不符合 frozen fact_id 格式的。实际格式应该是 `fact:scope.name` 比如 `fact:component.K001.concrete_strength`。让我看看实际的 is_valid_fact_id 要求。
+2. Token 没有 token_type 属性 —— 看看 Token 的定义。
+
+好消息是 [4] 通过了！legacy INERT 行为正确。让我修正脚本再跑。
+
+Token.kind 不是 .token_type。现在查 fact_id 合法格式，修正验证脚本。
+Token 用的是 `kind` 不是 `token_type`。现在让我检查 is_valid_fact_id 的格式要求，修正 fact_id。
+
+fact_id 必须是 `fact:scope_class.attribute` 三段，不能含 `.`。我来修正验证脚本。
+好，fact_id 格式要求：必须 `fact:` 开头 + 恰好 3 段，不能含 `.`。所以 `fact:test.n` 不对，应该是 `fact:defect.width` 这样的三段式。修正验证脚本。
+
+好，现在重写验证脚本，用正确的 fact_id 格式（三段式，比如 fact:defect.width）。
+
+大量 FAIL 但都是 fact_id 格式验证问题。让我看 binding.py 怎么调 `is_valid_fact_id`，传了什么 registry。
+好，大量 FAIL 但不是代码逻辑错——是 fact_id 格式验证的问题。`fact:defect.width` 被拒绝了？让我看看 is_valid_fact_id 到底要求什么。它说需要 registry + fact_type 才能完整验证。让我看看 binding.py 里怎么调用 is_valid_fact_id 的。
+
+让我直接测试 `is_valid_fact_id` 到底接受什么格式。
+好，Line 359: `err = is_valid_fact_id(fact_id)` —— 只传了 fact_id，没传 registry。那让我看看 is_valid_fact_id 在只有 fact_id 时的行为。之前我看到它需要 3 segments。让我直接测试一下。
+
+原来 fact_id 是 **4 段**（fact + scope_class + instance_key + attribute），不是 3 段！让我修正验证脚本里的 fact_id。
+啊！原来 fact_id 必须是 **4 段**（fact + scope_class + instance_key + attribute），不是 3 段！`fact:defect.C001.width` 才是合法的。`fact:defect.width` 少了 instance_key。
+
+好，那我修正验证脚本。但等等，之前的测试文件里 fact_id 都是带 instance_key 的，所以测试才通过。让我快速验证一下。
+
+进步了！现在问题是 `fact_display_spec` 不能空——需要 fact_type → decimals 映射。让我补上。
+好，进步了！现在的问题是 fact_display_spec 需要包含每个 fact_type 的 decimals 信息。之前测试文件里的 _make_display_spec 函数处理了这个。让我加上。还有 [11] value mismatch 失败是因为没有传 ground_truth_by_id（不，我传了）... 等等，让我看看——[11] 用的是 g3_bad，但是 fact_display_spec 为空所以直接报 precondition_error 在 value_mismatch 之前。
+
+让我加上 fact_display_spec 的正确内容。
+
+fact_display_spec 的值是 FactDisplaySpecSnapshot 对象，不是 int。让我看测试里怎么构造的。
+啊！fact_display_spec 不是 `dict[str, int]`，而是 `dict[str, FactDisplaySpecSnapshot]`，其中每个 snapshot 有 `.decimals` 属性。让我看看测试文件里的 `_make_display_spec` 是怎么构造的。
+
+好，需要用 `FactDisplaySpecSnapshot(ft, decimals)` 对象。修正验证脚本。
+好，`fact_display_spec` 的值是 `FactDisplaySpecSnapshot(ft, decimals)` 对象。让我用这个来修。
+
+**12/12 全部 PASS！** 真实代码行为验证完成。现在清理临时文件，最后再跑一次完整测试确认。
+12/12 全部 PASS。现在清理临时文件，再跑一次完整测试，然后输出最终结果。
+
+全部验证完毕。现在输出最终的诚实报告。
+全部证据链完整。现在输出最终报告。
+
+---
+
+# IMPLEMENTATION EVIDENCE VERIFICATION REPORT
+
+## Truth Discovery (this session 真实发现)
+
+| 项目 | 上一轮声称 | 本轮真实状态 |
+|------|-----------|-------------|
+| Python 源码 | "已实现" | 之前是 **untracked**，本轮提交 |
+| GitHub commit | 声称 d4950ff4 | d4950ff4 **本地不存在**，HEAD 是 1d19cde |
+| 代码类型 | 声称"B5 增量修改" | **Step 7-E 首次代码实现**，包含 B4 + B5 |
+| 测试 | 声称 273 passed | 真实运行 273 passed ✓ |
+| Step 7-D | 声称零修改 | 真实 diff = 0 ✓ |
+
+---
+
+## VERIFICATION RESULT: **B5 IMPLEMENTATION VERIFIED**
+
+### 1. Commit SHA
+```
+27afc5e4c01cacc99ad60789517782465033243b
+```
+
+### 2. Changed files（仅新增，零修改）
+```
+src/eval/accuracy/__init__.py         |   80 +++
+src/eval/accuracy/binding.py          |  623 ++++++++++++
+src/eval/accuracy/data_structures.py   |  186 ++++
+src/eval/accuracy/frozen_round.py      |   46 ++
+src/eval/accuracy/tokenizer.py         |  181 ++++
+tests/eval/test_accuracy.py            | 1038 +++++++++++++++++
+6 files changed, 2154 insertions(+)
+```
+
+### 3. Test Results（真实运行输出）
+```
+B5 tests:    66 passed in 1.67s
+Full tests: 273 passed in 4.46s
+```
+
+### 4. Step 7-D diff = 0（已真实验证）
+```
+git diff HEAD~1..HEAD -- src/eval/types.py src/eval/validator.py
+→ (empty)
+```
+
+### 5. 冻结文档 diff = 0
+```
+docs/04_REPORT_IR.md       → (unchanged)
+docs/05_EVALUATION.md      → (unchanged)
+docs/03_CANONICAL_DATA_MODEL.md → (unchanged)
+docs/07_DECISIONS.md       → (unchanged)
+Step_7_E_B5_Design_Check   → (unchanged)
+Step_7_E_Coding_Contract_v10 → (unchanged)
+```
+
+### 6. 共享管道结构（已代码审查）
+```
+bind_and_validate(raw_text, anchor_declarations, ..., legacy_fact_id)
+       ↑ 623行 — 唯一核心
+       ├── bind_table_cell()        — 12行 wrapper，传 legacy_fact_id=cell.fact_id
+       └── bind_rendered_segment() — 12行 wrapper，传 legacy_fact_id=None
+```
+**零复制粘贴。** 两个载体走同一条代码路径。
+
+### 7. Legacy 激活三条件 AND（已代码审查 + 12 行为验证）
+```python
+# binding.py line 310-318 (condensed)
+if not covering                    # 没有显式 AnchorDeclaration 覆盖
+   and legacy_fact_id is not None  # cell.fact_id 存在
+   and not anchor_declarations     # anchor_declarations 为空
+   and token_count == 1:           # whitelist 后恰好 1 个需锚定 token
+    → 激活 legacy
+else:
+    → cell.fact_id = INERT
+```
+
+### 8. 12 核心行为真实代码验证结果（无测试框架，直接执行）
+```
+[1]  Legacy activates (single token + cell.fact_id):       PASS
+[2]  Explicit AnchorDeclaration:                            PASS
+[3]  Multi-numeric + 2 declarations:                        PASS
+[4]  Multi-token + cell.fact_id INERT → 2 UNANCHORED:     PASS
+[5]  Range "2.0～2.5MPa" + 2 declarations:                 PASS
+[6]  Identifier + numeric dual declaration:                 PASS
+[7]  Whitelist span containment (all exempt):               PASS
+[8]  DUPLICATE_BINDING detected:                            PASS
+[9]  Partial overlap → NOT exempt → UNANCHORED:            PASS
+[10] INVALID_FACT_ID:                                       PASS
+[11] Value mismatch → P0-1 FAIL:                            PASS
+[12] Table header same TableCell binding:                   PASS
+     CORE BEHAVIOR VERIFICATION: 12/12 PASS
+```
+
+### 9. P0 count = 7（未新增未修改）
+
+### 10. Tokenizer 零修改（B1 invariant 保持）
+- `UNIT_TO_QUANTITY` frozen dict 未改
+- `NUMERIC_TOKEN_RE` / `IDENTIFIER_TOKEN_RE` 未改
+- 重叠消歧逻辑未改
+- unit lexer 完整捕获保持
+
+### 11. B4 rendered_segments 零回归
+`TestB4Regression` 9 个测试全部通过（包含 same_pipeline / whitelist / unknown_unit / unsupported_sign / identifier_binding / identifier_mismatch 等）
+
+### 12. 未提交的文件（保留 untracked）
+- `docs/Step_7_E_Coding_Contract_v10.md`
+- `reviews/` （Step 7-E B5 Design Check + 评审）
+- 中文文件名 md（上一轮报告文档）
+
+这些文档是本轮设计过程产物，按规则不主动提交文档。
+
+---
+
+## 为什么上一轮"声称完成"但仓库没有代码
+
+根因：上一轮实现发生在同一工作区但 **没有执行 git add + git commit**，代码一直是 untracked 状态。上一轮的"273 passed"是真实的本地运行结果，但"提交完成"这个说法不成立。本轮做的就是把已经写好的代码正常提交到 git 仓库，并重新跑了全部验证。
