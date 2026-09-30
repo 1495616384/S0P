@@ -1,0 +1,732 @@
+The user's input is a file path pointing to a long-text file. I need to read that file to understand the task. The path is: `g:\workspace\zixun4/c:\Users\Administrator\AppData\Roaming\Trae CN\User\workspaceStorage\754d182f4b4a3e836b734501bfe28993\long-text\home\munu4kj0-us6m\你现在进入：____....txt`
+
+Let me read that file.
+
+I'll start by reading the current local design truth sources.
+Let me understand the task. This is a "Step 7-F Design Decision Closure" session. I need to:
+
+1. Read design truth sources: docs/02, 03, 04, 05, 07, Step_7_E_Coding_Contract_v11.md, Step_7_F_Coding_Contract_v1.md
+2. Close OPEN-1 through OPEN-4
+3. Update Step_7_F_Coding_Contract_v1.md status from DESIGN NEEDS DECISION to DESIGN READY FOR CODING
+4. Update 07_DECISIONS.md with D-041 through D-044
+5. Update 05_EVALUATION.md minimally
+6. Audit consistency
+7. Output the Step 7-F Design Decision Closure Report
+
+No code, no tests.
+
+Let me first explore the workspace to understand what files exist.
+
+Let me use the memory quick pass and read the docs.
+
+Let me start by listing the docs directory and reading the key files.
+
+Let me read the key files. Start with Step_7_F_Coding_Contract_v1.md, then 07_DECISIONS.md, 05_EVALUATION.md, and the Step 7-F design discovery reports.
+
+Now let me read 05_EVALUATION.md and the design discovery reports.
+Now let me read 05_EVALUATION.md and the Step 7-F Design Discovery reports. Also 02_ARCHITECTURE.md for §17.2.
+
+Let me read 05_EVALUATION.md first.
+
+Now let me read the compliance review and 02_ARCHITECTURE.md §17 to understand M7. Let me also check the Step 7-E contract for relevant invariants.
+
+The task is well-specified. The prompt itself gives the exact decisions to make (OPEN-1: RFC 8785 JCS + SHA-256; OPEN-2: per-P0 per-case metrics etc; OPEN-3: JitterRegister separate; OPEN-4: 3-run calibration + human confirmation + FROZEN immutable).
+
+So I need to:
+1. Update `docs/Step_7_F_Coding_Contract_v1.md`: close OPEN-1~4, change status to DESIGN READY FOR CODING.
+2. Update `docs/07_DECISIONS.md`: add D-041~D-044, update index, update D-040 and D-035/036/037 statuses.
+3. Update `docs/05_EVALUATION.md`: minimally align §7, §8, §8.3-3 (CONFLICT-1 resolution), etc.
+4. Produce the report.
+
+Let me read the compliance review report to see if there's anything else.
+
+Let me also read 02_ARCHITECTURE §17 for M7 references and check for any hash semantics conflicts.
+
+Let me read the compliance review.
+
+Let me look at 02_ARCHITECTURE §17 and the hash reference around line 502.
+
+Let me read 02_ARCHITECTURE around lines 700-770 (§16, §17) to check what's there.
+
+I have the full picture. Let me confirm my understanding of the intent, then execute.
+
+**意图确认**：本轮是 Step 7-F 的 **Design Decision Closure**（非编码、非测试、非评审）。核心动作 = 一次性裁决 OPEN-1～OPEN-4 并关闭 Design Gap，把 `Step_7_F_Coding_Contract_v1.md` 从 `DESIGN NEEDS DECISION` 推进到 `DESIGN READY FOR CODING`，同步更新 `07_DECISIONS.md`（D-041～D-044）与 `05_EVALUATION.md` 交界处，关闭 CONFLICT-1。禁止改 `src/**`、`tests/**`、Step 7-E 实现与 03/04/Step 7-E 契约。
+
+开始执行。
+Now I have a full picture. Let me plan the edits.
+
+I now need to make edits:
+
+### 1. `docs/Step_7_F_Coding_Contract_v1.md`
+
+Changes:
+- Line 4 status: DESIGN NEEDS DECISION → DESIGN READY FOR CODING
+- §4.1 field table: hash fields — remove "语义待 OPEN-1" wording, add frozen semantics. Actually the field table just references §12. I'll update the rows for input_hash/params_hash/prompt_hash/output_hash in §4.1 to reference frozen semantics, and remove OPEN-1 mentions.
+- §12: rewrite to full frozen Hash semantics (OPEN-1 closure).
+- §13: rewrite to frozen Metrics/Regression operationalization (OPEN-2 closure).
+- §14: rewrite to Jitter Register (OPEN-3 closure) — resolve CONFLICT-1.
+- §7: Baseline — add human confirmation (OPEN-4 closure) with schema, DRAFT/FROZEN, immutability.
+- §9: Gate — add gold gate details aligning with the decisions (gold_count==0 → NOT_EVALUABLE blocking false; 0<gold<5 economic gate; >=5 100% PASS else FAIL blocking true). Also expected_issue_count==0 → P0-7 NOT_EVALUABLE.
+- §8: Regression — add case set consistency precondition (already there), issue set diff, per-case regression, no average masking, minimal fields.
+- §16 acceptance table: update statuses to ✅ / DESIGN READY FOR CODING.
+- §18 OPEN summary: mark CLOSED.
+- Appendix B: update statuses for Q12/Q13 etc.
+- Add hash semantics summary table.
+- Add jitter register schema, baseline schema.
+- Also §6.3 references OPEN-3.
+- Also §10.2 item 4 references OPEN-3.
+
+This is a large rewrite. Let me be careful and thorough.
+
+### 2. `docs/07_DECISIONS.md`
+- Index: D-040 status "待裁决" → "已裁决（见 D-041～D-044）"; add D-041~D-044 rows.
+- D-033~D-039 status annotations? They say "hash 语义 OPEN" etc. I could update but任务 says don't delete D-040. I'll update D-035/036/037/040 statuses to reflect closure. Actually minimal: update index status for D-035, D-036, D-037, D-040, and add D-041~D-044.
+- Add D-041~D-044 entries.
+
+### 3. `docs/05_EVALUATION.md`
+- §7: add frozen operationalization pointer; gold gate rules (gold=0 NOT_EVALUABLE).
+- §8.1: reference frozen hash semantics (§12). Currently says hash OPEN. Should update the note to reflect frozen.
+- §8.2: add issue set diff + per-case regression, no average masking, minimal fields.
+- §8.3-3: fix known_issues → JitterRegister (CONFLICT-1 RESOLVED).
+- Add baseline human confirmation cross-ref.
+- Version bump? The doc says v0.4. The task says "只修改 Step 7-F 直接涉及的交界处". I should add a v0.5 revision note. Hmm, but 05 is a design doc; task §四十四 says must update 05 to not conflict. It says "必须让 05_EVALUATION.md 与新的 Step 7-F Contract 不冲突". Let me add a v0.5 revision note. Actually, careful - adding version bump might be considered "creating v2"? No, that's for the Contract. For 05, minimal revision is fine. I'll add v0.5 revision note.
+
+Hmm, actually let me be careful about scope. The instruction §44 says "只修改 Step 7-F 直接涉及的交界处" and lists §7 Gate, §8 Regression, §8.1 Run Snapshot, §8.3 Determinism/Jitter, §9 Task 0/gold count. So I should modify those sections.
+
+Now, the user rule: "任何代码的合并，本质是意图的合并". And rules say "在进行任务前必须将你理解的意图提供给用户进行确认."
+
+Hmm. The user rules require providing my understanding of intent for confirmation before proceeding. But the goal system has activated a goal (autonomous). The system-reminder says the goal command already created and activated the goal, objective is the user input. This is an autonomous goal execution mode. Let me consider: should I ask for confirmation? The task is very explicitly specified with exact decisions. The task says "现在开始执行" (now start executing). So the intent is clear and explicitly instructed to execute. I'll proceed but maybe briefly state understanding at the start.
+
+Actually the user rules say "在进行任务前必须将你理解的意图提供给用户进行确认" - must provide understanding for confirmation before task. But the prompt explicitly says "现在开始执行" and provides all decisions. Given this is an autonomous goal run with explicit instructions, and the document itself is the confirmation request, I'll state my understanding briefly then proceed. This is the pragmatic reading — the task prompt IS the intent specification and explicitly says to execute.
+
+Also I should use the查看 memory / skills. There's a skill "意图转代码" that says "任何编程行为之前需要读取此技能". But this round is NOT coding — it's design document editing. Hmm, "任何编程行为之前" - any programming behavior. Editing design docs... arguably not programming. But to be safe and compliant with the project rules, maybe not needed since no code. The task explicitly forbids code. I'll skip the coding skill.
+
+Let me check the git status first to understand the working tree, and confirm no code touched.
+
+Actually, let me just proceed. Let me create a todo list.
+
+Let me plan the todos:
+1. 冻结 OPEN-1（Hash 语义）并写入 Contract
+2. 冻结 OPEN-2（Metrics/Regression）并写入 Contract
+3. 冻结 OPEN-3（JitterRegister）并写入 Contract，关闭 CONFLICT-1
+4. 冻结 OPEN-4（Baseline 人工确认）并写入 Contract
+5. 更新 Contract 状态与验收门槛为 DESIGN READY FOR CODING
+6. 更新 07_DECISIONS（D-041~D-044 + 索引）
+7. 更新 05_EVALUATION 交界处
+8. 一致性审计 + 输出报告
+
+Let me start editing.
+
+First, the Contract. Let me do the edits carefully.
+
+#### Edit 1: Status line
+
+```
+> 状态：**DESIGN NEEDS DECISION**（运行层边界与判定语义已冻结；4 项 OPEN 待裁决，见 §18）
+```
+→
+```
+> 状态：**DESIGN READY FOR CODING**（运行层边界与判定语义已冻结；OPEN-1～OPEN-4 已于本版裁决并关闭，见 §18；CONFLICT-1 已 RESOLVED，见 §14）
+```
+
+Also version: "版本：v1" → keep v1 with closure revision note. The task says prefer v1 → closure revision, 不要创建 v2. So keep `v1（closure revision 1）`? Let me write `版本：v1（Closure Revision 1，2026-09-30）`.
+
+Let me now write the changes.
+
+Let me also handle §1.4/§3.4 references to OPEN-1 etc.
+
+Now let me carefully craft §12 (Hash), §13 (Metrics/Regression), §14 (Jitter), §7 (Baseline), §9 (Gate), §8 (Regression).
+
+I'll write substantial replacements.
+
+Let me start with the header.
+
+Now editing the Contract. First the header/status and version.
+Let me start editing the Contract. First the header/status.
+
+Now update the RunSnapshot field table hash rows.
+Also I should add D-041~D-044 to the 冻结依据? Not necessary. Let me now update §4.1 field table rows for hash fields.
+
+Current rows:
+```
+| `input_hash` | 输入指纹 | §12（**OPEN-1**） | runner | 是（05 §8.1 保留） | 由 runner 确定性计算（语义待 OPEN-1） | 内容决定 | 是 | 是 | 否（归因） |
+...
+| `params_hash` | 参数指纹 | §12（**OPEN-1**） | runner | 是 | 同 `input_hash` | 内容决定 | 是 | 是 | 否 |
+| `prompt_hash` | Prompt 指纹 | §12（**OPEN-1**） | runner | 是 | 同 `input_hash` | 内容决定 | 是 | 是 | 否 |
+| `output_hash` | 产物指纹 | §12（**OPEN-1**） | runner | 是 | 同 `input_hash` | 内容决定 | 是 | 是 | 否 |
+```
+
+Let me update them to reference frozen §12.
+
+Now update §6.3 (jitter protocol reference).
+Now update §6.3 to reference frozen §14 rather than OPEN-3. And §10.2 item 4. Then rewrite §7, §8, §9, §12, §13, §14, §16, §18, appendices.
+
+Let me do §6.3 first.
+
+I accidentally dropped two rows. Restoring them.
+Oops, I accidentally removed the "Skill 变化" and "输入变化" rows. Let me fix — I need to restore them and just update the hash reference. Let me re-edit.
+
+Now rewrite §7 Baseline Contract with OPEN-4 closure.
+Good. Now rewrite §7 Baseline (OPEN-4 closure). Let me read current §7 again (lines ~334-346).
+
+Current §7:
+```
+## 7. Baseline Contract（冻结）
+
+| 问题 | 冻结答案 | 依据 |
+| ---- | ---- | ---- |
+| 什么叫 baseline？ | ... |
+| 谁创建 baseline？ | ... |
+| 何时创建？ | ... |
+| baseline 包含什么？ | ... |
+| 是否需要人工确认？ | **OPEN-4**（既有文档未定义；见 §18） | — |
+| baseline 是否冻结？ | 是。... |
+| 如何比较？ | 按 §8 的回归比较规则（issue_id 集合差 + case 级状态） | §8.2 |
+
+参照 run 的选取：**显式指定**（约定取「首次全量跑通」的那次运行）；3 次运行全部落盘留档。
+```
+
+I'll replace this whole section with a much richer baseline contract per the decision in §34-§40.
+
+Let me write it.
+
+Now rewrite §8 Regression Contract with OPEN-2 closure.
+Now rewrite §8 Regression Contract (OPEN-2 closure). Let me read the current §8 section (lines 437-...).
+
+Current:
+```
+## 8. Regression Contract（冻结）
+
+### 8.1 触发与产物
+
+```text
+RunRequest.baseline != None → 产出 RegressionReport
+RunRequest.baseline == None → 不产出（只产 RunRecord + GateDecision）
+```
+
+### 8.2 回归报告内容（05 §8.2 的正式化；比较粒度冻结）
+
+| 项 | 定义（数据来源 = 两次 RunRecord 的 CaseResult，不含任何重算） |
+| ---- | ---- |
+| 新增错误 | `issue_id ∈ 当前 run` 且 `∉ baseline`（必须解释或修复） |
+| 已修复 | `issue_id ∈ baseline` 且 `∉ 当前 run` |
+| 未变 | 两侧交集 |
+| 用例级变化 | 逐 `case_id` 对比 `case_status` / `rule_statuses`（透传值，不重判） |
+| P0 门禁 | 对**当前 run** 独立执行（§9；不与 baseline 比较） |
+| 回归标记 | 判定口径见 **OPEN-2**（§13）；集合运算部分（§8.2 前三行）已冻结 |
+
+### 8.3 集合一致性（precondition，冻结）
+...
+### 8.4 禁止项（冻结）
+...
+```
+
+I'll expand §8.2 with the exact set-diff semantics, add §8.5 per-case regression, §8.6 no average masking, §8.7 minimal fields. Let me rewrite.
+
+Note the task's numbering: OPEN-2.6 Regression Case Comparison (case_id set must be equal else precondition error), OPEN-2.7 Issue Set Diff, OPEN-2.8 Case Regression (case_status + 7 P0 RuleStatus; attention to degradation PASS→FAIL etc), OPEN-2.9 no average only, OPEN-2.10 minimal fields.
+
+Let me write.
+
+There's a small inconsistency: §8.2 table row says "回归标记 | per-P0 per-case（§8.5 / §13）" but I named sections §8.2.2 etc. Let me fix that reference to §8.2.2 / §13.
+
+Now §9 Gate Contract. Current §9.1 mentions expected_issues hit. §9.2 has the table. I need to add:
+- gold_count == 0 → NOT_EVALUABLE, blocking=false + annotation
+- 0 < gold < 5 → keep economic gate, blocking=false + annotation
+- gold >= 5 → all applicable gold P0 must 100% PASS else FAIL blocking=true
+- Expected issues metric: P0-7; expected_issue_count == 0 → NOT_EVALUABLE; gold case with expected issues must all hit.
+
+Let me read §9 current text around lines 545+.
+
+Let me read.
+
+Now update §9.1 to add explicit gold gate rules from decision. Actually §9.2 already covers most. Let me enhance §9.1 with the expected issues metric (P0-7) rule and add explicit wording for the three gold count regimes. §9.2 table already has the rules; I'll refine the wording to exactly match decision (§16/§17): gold_count==0 → NOT_EVALUABLE blocking false; gold<5 → verdict PASS/FAIL per actual result, blocking=false; gold>=5 → all gold P0 PASS → PASS else FAIL blocking=true.
+
+Let me edit §9.1 and §9.2.
+
+Now §10.2 item 4 — resolve CONFLICT-1. Update it.
+
+Also add a §10.3 about JitterRegister ≠ known_issues? No, §14 handles it. Let me just update item 4.
+
+Now rewrite §12 Hash semantics. Let me read the current §12, §13, §14 fully (lines ~655-720).
+
+Now rewriting §12 (OPEN-1 closure).
+Now replace §12, §13, §14 with the frozen versions.
+
+§12 new content: Canonical serialization, four hash semantics, hash summary table, hash lifecycle.
+
+Let me write.
+
+Now §13 (OPEN-2 closure).
+Now rewrite §13 (OPEN-2 closure).
+
+Now §14 (OPEN-3 closure + CONFLICT-1 resolution).
+Now rewrite §14 (OPEN-3 closure / JitterRegister / CONFLICT-1 RESOLVED).
+
+Now update §15 F-T-14 (hash OPEN-1 冻结后补) and add tests for jitter/baseline. Let me read §15-§18.
+
+Read lines 980-1120.
+
+Now update §15 test contract.
+Now update §15 F-T-14 and add new tests for hash/jitter/baseline per decision. The task doesn't explicitly require adding tests, but it says "测试契约（Coding Round 必须覆盖）". Since hash/jitter/baseline semantics are now frozen, the tests should reflect. I'll update F-T-14 and add F-T-15 (jitter), F-T-16 (baseline human confirmation), F-T-17 (expected issues metric), F-T-18 (regression no average masking). Keep it minimal and consistent with the decisions. Actually to avoid over-engineering, I'll update F-T-6 (gold regimes), F-T-14 (hash), F-T-10 (baseline human confirmation), and add F-T-15 jitter and F-T-16 P0-7.
+
+Let me update §15 rows.
+
+Now update §16, §18, ending verdict, and appendices.
+Now update §16 acceptance table and §18 and 结尾判定 and appendices.
+
+§16 new table - all ✅, conclusion DESIGN READY FOR CODING.
+
+Also add §0 F-INV list maybe? Not needed.
+
+Let me update §16.
+
+Note: §17 "不修改：src/**、tests/**（本契约轮）" — now that we're at closure, this is fine, it's the design round. Leave it.
+
+Now update §18 OPEN summary to CLOSED status, and 结尾判定, and appendices.
+
+Now update appendix A (Gap-3, Gap-6, Gap-7, Gap-8 references to OPEN) and appendix B (Q9/Q12/Q13 statuses).
+
+Appendix A rows:
+- Gap-3: "hash 字段语义 → OPEN-1" → "hash 字段语义已冻结 §12（D-041）"
+- Gap-6: "抖动登记载体 → OPEN-3" → "抖动登记载体已冻结 §14（D-043）"
+- Gap-7: "人工确认 → OPEN-4" → "人工确认已冻结 §7（D-044）"
+- Gap-8: "回归标记操作化 → OPEN-2" → "回归标记操作化已冻结 §8.2（D-042）"
+
+Supplement line: update to CLOSED.
+
+Appendix B:
+- Q9: "FROZEN（口径 OPEN-2）" → "FROZEN（§13）"
+- Q12: "**OPEN-1**" → "FROZEN（§12；D-041）"
+- Q13: "FROZEN（载体 OPEN-3）" → "FROZEN（§14；D-043）"
+- Add Q15 jitter? Q15 known_issues already. Maybe add rows for jitter/baseline human confirm. But Q1-Q20 index per prompt §49 must answer Q1-Q20 defined in the prompt. The prompt's Q list is Q1-Q20 about hash etc. The contract's appendix B is a different Q1-Q20. Hmm. The prompt §49 says "一个新的程序员只看 Step_7_F_Coding_Contract_v1.md 就必须能唯一回答 Q1..Q20". Those Qs are: input_hash/params_hash/prompt_hash/output_hash, P0 pass rate denominator, NOT_EVALUABLE in denominator, gold=0, gold<5, gold>=5, expected_issue_count=0, baseline/current case set mismatch, issue_id diff, what counts as P0 regression, jitter location, jitter into known_issues, when jitter allowed, why baseline 3 runs, which run is canonical, who confirms, can baseline be modified...
+
+The contract's Appendix B is a pre-existing Q1-Q20 with different questions. The prompt §49 requires the contract to answer its 20 questions uniquely. I think I should add a new section/table that maps the prompt's Q1-Q20 to answers. That's important for the acceptance criteria "唯一答案".
+
+Let me add a new appendix or section. Best: add a new subsection in §18 or a new appendix C: "任务书 §49 Q1–Q20 唯一答案索引".
+
+Let me do that. Also update existing appendix B statuses.
+
+Let me first update appendix A and B.
+
+Now update Appendix B statuses and add Appendix C for the prompt's Q1-Q20.
+
+Let me update the appendix B rows.
+
+Contract done. Now check remaining references to OPEN in Contract.
+
+Let me grep for "OPEN-" in the contract.
+
+All remaining OPEN references are closure references. Good.
+
+Now also §3.4 mentions "output_hash 指纹（§12）" — fine.
+
+Now update todos 1-5 done. Then 07_DECISIONS.md.
+
+Let me mark todos and update decisions.
+
+Now 07_DECISIONS.md:
+- Index table: update D-040 status; add D-041~D-044.
+- Update D-035/036/037 status strings.
+- Add D-041~D-044 entries.
+- Update D-040 "是否仍然成立" to reference closure.
+
+Let me edit the index first.
+
+Now updating 07_DECISIONS.md.
+
+Now update D-040's "是否仍然成立" field, and add D-041~D-044 entries after D-040 entry (which is at end before 附录).
+
+Let me find D-040's entry ending. It ends at line ~579-580 with:
+```
+| **是否仍然成立** | 待裁决（裁决后补登记新决策并更新本条目） |
+| **发起人** | 用户要求（Step 7-F Design Discovery & Contract Freeze） |
+```
+
+Update that and insert new entries.
+
+Now updating 05_EVALUATION.md. First the version header.
+Now update 05_EVALUATION.md. 
+
+Sections to modify:
+- Header version note: add v0.5 revision note (Step 7-F design closure).
+- §7 分层指标与门禁: add P0 gate operationalization pointer (gold=0 → NOT_EVALUABLE; gold<5; gold>=5; P0 pass rate denominator; no expected_issues → NOT_EVALUABLE). Modify "任何 P0 指标下降即视为回归" to point to §8.2.
+- §8 回归流程: add baseline human confirmation step (OPEN-4) + case_ids consistency.
+- §8.1: update the note about hash OPEN → frozen.
+- §8.2: add issue diff detail + per-case regression + no average masking + minimal fields.
+- §8.3-3: change known_issues → JitterRegister (CONFLICT-1 RESOLVED).
+- §9: gold count / task 0 - reference.
+
+Let me read the header again to craft the version note. Lines 1-23 read earlier. Let me add v0.5 note.
+
+Let me make the edits.
+
+First header: add v0.5 revision note after v0.4 note.
+
+Now §7 of 05_EVALUATION.md.
+Now update §7. Let me read §7 current text (lines ~360-380 now).
+
+Current §7:
+```
+## 7. 分层指标与门禁
+
+| 级别 | 指标 | 门禁 |
+...
+补充规则：
+
+1. gold 用例的 expected_issues 命中率不达 100% 即失败——**「该报错时没报错」是一等缺陷**；
+2. 任何 P0 指标下降即视为回归，无论其他指标是否提升；
+3. 门禁阈值在 M7 建立基线时**写死进配置**，不得随运行结果调高；
+4. **经济门禁（V2.1-7）**：gold 用例数 < 5 时，P0 的 100% 要求降级为「全量报错但不阻断构建」，且评测报告首行必须标注「样本不足，P0 门禁不具统计意义」。
+
+> 经济门禁的原因：...
+> 阈值 `< 5` 是**待定的经验值**，需由 §9「任务 0 档案盘点」的实际结果校准。
+```
+
+I'll modify 补充规则 2 and 4, and add a pointer to Step 7-F Contract §9/§13 for operationalization.
+
+Let me be careful: "只修改 Step 7-F 直接涉及的交界处" — §7 is listed. I'll add a paragraph at the end of §7 pointing to the frozen operationalization, and amend rule 2 and 4 to reference the contract §8.2/§9.2.
+
+Let me edit.
+
+Now §8 回归流程 diagram + §8.1 + §8.2 + §8.3.
+
+Current:
+```
+## 8. 回归流程
+
+```text
+确定基线（首次全量跑通）
+    ↓
+产出 run snapshot，冻结为 baseline
+    ↓
+任何变更（模型 / Prompt / Skill / 模板 / 程序 / Schema）
+    ↓
+重新全量运行
+    ↓
+与 baseline 比对，产出回归报告
+    ↓
+新增错误 / 已修复 / 未变
+    ↓
+P0 门禁判定
+```
+
+### 8.1 Run Snapshot
+... (json)
+> **字段级冻结与补充字段**：...
+
+### 8.2 回归报告内容
+| 项 | 说明 |
+...
+
+### 8.3 确定性与抖动规则（v0.2 新增）
+...rule 3 known_issues...
+```
+
+Let me update §8 flow to include human confirmation. And §8.1 note. And §8.2. And §8.3-3.
+
+Let me edit §8 header flow.
+
+Now §8.1 note update.
+
+Current note:
+```
+> **字段级冻结与补充字段**：本草案的逐字段语义、补充字段（`case_ids` / `template_versions` / `rerun_of`·`rerun_reason`）、四个 hash 字段的 OPEN 状态、以及本阶段各字段是否参与判定，见 `Step_7_F_Coding_Contract_v1.md` §4 / §12（依据 D-035）。本草案不再单独维护字段语义。
+```
+Change to reflect hash frozen.
+
+Now §8.2 回归报告内容. Current:
+```
+| 项 | 说明 |
+| ---- | ---- |
+| 新增错误 | baseline 无、现在有 → 必须解释或修复 |
+| 已修复 | baseline 有、现在无 |
+| 未变 | 保持 |
+| P0 门禁 | 通过 / 失败 |
+```
+
+Add rows / pointer for issue_id diff, per-case regression, no average masking, minimal fields.
+
+Now §8.3 rule 3 - change known_issues → JitterRegister. Current:
+```
+3. **模型版本变更时**：先跑 3 次，把三次之间不一致的项登记为该用例的 `known_issues`（类别：模型抖动）；抖动率作为 P2 指标单独统计，**不计入 P0 失败**；
+```
+
+Change and add CONFLICT-1 RESOLVED note.
+
+Add a CONFLICT-1 RESOLVED note in §8.3 after the rules. Let me add after line 467 (the "这套规则的目的" line) or right after rule 5. Let me add a note paragraph.
+
+§9 of 05 is 任务 0 档案盘点. The task §44 says check §9 Task 0 / gold count. §9 doesn't really conflict. I could add a small note but it's fine. Actually the task lists "§9 Task 0 / gold count" as a place to check for consistency with Step 7-F Contract. §9 already says gold数量不足 must be recorded as known limitation, no silver/bronze冒充gold. This is consistent. I'll leave §9 unchanged to honor "只修改交界处" minimally. Actually, maybe add nothing.
+
+Now, the docs also reference §7.2 in 05? Let me check references "§7.2" etc. In §7 补充规则 I referenced contract §8.2/§13. Fine.
+
+Also 05 §3.2 known_issues example. That's fine (historical known issues). Consistent.
+
+Now let me verify the full contract doesn't have lingering structural issues, e.g., §4.3 "case_level: str # gold | silver | bronze（来自 meta.json，只读）". Fine.
+
+Now let me also check whether the Report IR doc or architecture references the hash semantics that could conflict. The task §47 audit says confirm no double truth source for hash. Let's grep for input_hash/params_hash/prompt_hash/output_hash across docs.
+
+No conflicts; 02 §10.4 mentions prompt_hash as trace field (a different context — Trace 记录), no semantics conflict. That's a Trace record field, not the RunSnapshot hash. It's a pre-existing field. It doesn't define semantics; D-041 now defines prompt_hash semantics for Step 7-F. There's a mild tension: 02 §10.4 Trace lists prompt_hash. It's fine (it's just a field name in trace). No real conflict; no change needed (and 02 modification isn't required).
+
+Now let me verify no other place claims "prompt_hash = hash(prompt file)" etc. Fine.
+
+Now let me check the contract for internal consistency: §4.2 line 227 says "草案未定义 hash 内容与规范化，不得照抄为已冻结语义" — that's now stale phrasing since we've frozen it. Let me reword it to "草案未定义 hash 内容与规范化；本轮已冻结为 RFC 8785 JCS + SHA-256". Let me fix.
+
+Now let me verify §5.1 lifecycle diagram references; §5.1 has "Baseline 确立：从既存 RunRecord 冻结为 baseline（§7）". Should add human confirmation. Let me check line ~259-270.
+
+Let me read §5.
+
+Now §5.2 baseline state vocabulary: "baseline：分离的冻结实体（引用某次 RunRecord + 确立记录）". Add DRAFT/FROZEN. Let me update.
+
+Actually minimal—it's fine but could add. Let me add "（status: DRAFT | FROZEN）".
+
+Now let me also check §2 interface / §3 Input — the Baseline type is referenced. Since baseline now has confirmed_by etc, no change needed in RunRequest.
+
+Now the docs update is done. Let me run a final consistency check with git diff status and confirm src/tests untouched.
+
+Let me check git status.
+
+There is ` M src/eval/accuracy/__init__.py` modified. Was that from a previous session (Step 7-E)? The compliance review said step 7-E收尾轮变更尚在工作区. So this modification predates my round. I did not modify src. Let me verify I didn't touch it — I only edited docs. Good.
+
+Let me confirm the diff of src to ensure it's not mine. Actually it's a pre-existing modification from the Step 7-E session. I should not touch it. It's fine.
+
+Now check the untracked `流水线机杲重复杂意.md` — irrelevant, pre-existing.
+
+Now let's do the final consistency audit. Let me verify the contract for any remaining inconsistencies like referencing §8.5 (removed). Let me grep for "§8.5" and "§13" references.
+
+Actually earlier I fixed §8.5 → §8.2.2. Let me grep for stale refs.
+
+Consistent. Now let me verify §17 禁止项 — it says "不修改：src/**、tests/**（本契约轮）". That's fine.
+
+Let me also double-check the 07_DECISIONS index "D-040" row and the D-040 条目 影响 field still mentions "Step 7-F 契约状态 = DESIGN NEEDS DECISION". That's a historical statement; it's in the D-040 影响 field describing what that decision produced at the time. But it might be confusing. The task said don't delete D-040. I'll leave the 影响 as historical record but the 是否仍然成立 now updated. Hmm, the 影响 says "Step 7-F 契约状态 = DESIGN NEEDS DECISION". That was true when D-040 was made. Since decision log policy says don't delete, and adds new entries, leaving it is acceptable. But to reduce confusion I could append "（该状态已由 D-041～D-044 推进为 DESIGN READY FOR CODING）". That's a reasonable append that doesn't delete. Let me do it.
+
+Now the docs work is complete. Let me update todos 6, 7 to completed, and do the final audit (todo 8).
+
+Final audit: verify no code/tests modified by me (git status showed only docs modified + pre-existing src/eval/accuracy/__init__.py from previous session). Let me verify that __init__.py change is pre-existing and I didn't touch it. I definitely didn't. But to be safe let me check the diff to confirm it's not an artifact of my session. Actually I'll just note it's pre-existing (untracked/modified before this round per the compliance review).
+
+Let me confirm by checking git diff for that file briefly — actually not needed and could be large. I'll just confirm I made no src/tests edits by checking modification times? Simpler: state it.
+
+Let me verify the 05 doc doesn't now contain duplicate/contradictory statements. Let me do a final grep for "known_issues（类别：模型抖动）" to make sure no leftover conflicting text in 05.
+
+The remaining "待裁决" mentions in 07 are historical (decision titles, preserved intentionally). Fine — "不要删除 D-040" and history preserved.
+
+Now let me verify the contract §16 conclusion, and that no leftover "DESIGN NEEDS DECISION" except in 07 history. Let me grep contract again for "DESIGN NEEDS".
+
+From earlier grep of contract, only line 4 (DESIGN READY) and 1056. No DESIGN NEEDS. Good.
+
+Now let me do final read of the full contract header region and §18 to ensure correctness. Already verified.
+
+Now todos 6,7 complete, 8 in progress → then output the final report.
+
+Let me also double-check I haven't accidentally broken markdown table in §8.2 (rows). Looks fine.
+
+One more: §3.4 "output_hash 指纹（§12）" ok.
+
+Let me also verify 05 §3.2 known_issues example is consistent (it's historical known issues with original/correct value) — yes consistent with "known_issues = historical errors only".
+
+Now produce the final report as specified in §51.
+
+Let me mark todos complete.
+
+Also, I should double check that the task's requirement "不要删除 D-040" is satisfied — yes.
+
+And "不要创建 v2" — I kept v1 with Closure Revision 1. Good.
+
+Now write the final report.
+
+Let me get the final git status/diffstat for the report (files modified).
+
+Files modified by me:
+- docs/Step_7_F_Coding_Contract_v1.md
+- docs/07_DECISIONS.md
+- docs/05_EVALUATION.md
+
+No src/tests changes.
+
+Now output report.
+
+# Step 7-F Design Decision Closure Report
+
+## 1. Decisions Closed
+
+```text
+OPEN-1  Hash 语义              → CLOSED（D-041）
+OPEN-2  Metrics / Regression   → CLOSED（D-042）
+OPEN-3  抖动登记载体           → CLOSED（D-043）；CONFLICT-1 RESOLVED
+OPEN-4  Baseline 人工确认      → CLOSED（D-044）
+```
+
+- **OPEN-1（Hash）**：正式冻结 **RFC 8785 JCS + SHA-256（UTF-8）**。四 hash 对象 = `InputManifest`（按 logical_id 排序）→ `input_hash`；`EffectiveRuntimeParameters` → `params_hash`（不含 run_id/timestamp/hash/metrics/baseline_id）；`EffectivePromptPackage`（含 resolved_messages）→ `prompt_hash`；`OutputManifest`（按 logical_id 排序）→ `output_hash`。冻结 `hash input ≠ hash path ≠ hash Python object representation`；timestamp/run_id 变化不改变任何 hash；hash 不参与任何判定。
+- **OPEN-2（Metrics/Regression）**：`p0_pass_rate = PASS / (PASS + FAIL + NOT_EVALUABLE)`（NOT_EVALUABLE 不得从分母删除）；gate 三分（gold=0 → NOT_EVALUABLE；0<gold<5 → 按实际 PASS/FAIL 且不阻断；gold≥5 → 100% 否则 FAIL+blocking）；P0-7 `expected_issue_count=0 → NOT_EVALUABLE`；回归先校验 case_ids 集合一致（不一致 = REGRESSION PRECONDITION ERROR，禁止只比交集）；issue_id 集合差 added/resolved/unchanged（复用 Step 7-E issue_id）；per-case + 7 P0 RuleStatus 回归，P0 恶化 = p0_regression，禁止平均分掩盖。
+- **OPEN-3（Jitter）**：新增独立 `JitterRegister`（run-group artifact，`jitter_register.json`）；**jitter ≠ known_issues**；仅 `model_version_snapshot` 变化时 3-run calibration；jitter rate → P2 diagnostic，不新增 P0 Rule；禁止自动免死 / 逐失败登记 / 写入 known_issues。
+- **OPEN-4（Baseline）**：baseline 不得自动冻结；流程 = 3-run calibration → Jitter Analysis → Human Review → Frozen Baseline；canonical run 由人工选定（`baseline_run_id` + `confirmed_by` / `confirmed_at`）；`status ∈ {DRAFT, FROZEN}`，仅 FROZEN 可用于 regression/gate；FROZEN 不可变，变更 = 新 `baseline_id`。
+
+## 2. Final Contract Changes
+
+| 文件 | 变更 |
+| ---- | ---- |
+| [Step_7_F_Coding_Contract_v1.md](file:///g:/workspace/zixun4/docs/Step_7_F_Coding_Contract_v1.md) | 状态 → **DESIGN READY FOR CODING**（v1 Closure Revision 1，未建 v2）；重写 §7（Baseline）、§8（Regression）、§9（Gate）、§12（Hash）、§13（Metrics）、§14（Jitter）；更新 §4.1/§4.2/§5.1/§5.2/§6.3/§6.4/§10.2/§15/§16/§18；附录 A/B 状态刷新 + 新增 **附录 C（任务书 §49 Q1–Q20 唯一答案索引）** |
+| [07_DECISIONS.md](file:///g:/workspace/zixun4/docs/07_DECISIONS.md) | 索引 + D-041～D-044；D-035/036/037/040 状态更新；D-040 保留（未删除） |
+| [05_EVALUATION.md](file:///g:/workspace/zixun4/docs/05_EVALUATION.md) | v0.4 → v0.5；§7 门禁操作化、§8 回归流程（人工确认 + case_ids 前置）、§8.1 hash 冻结指引、§8.2 回归报告粒度、§8.3-3 **CONFLICT-1 RESOLVED**（known_issues → JitterRegister） |
+
+未修改：`src/**`、`tests/**`、`02/03/04`、`Step_7_E_Coding_Contract_v11.md`（工作区中 `src/eval/accuracy/__init__.py` 的改动为上一轮 Step 7-E 遗留，本轮未触碰）。
+
+## 3. Decision Records
+
+```text
+D-041  Step 7-F Hash Canonicalization（RFC 8785 JCS + SHA-256；四 hash 对象）      → 有效（关闭 OPEN-1）
+D-042  Step 7-F Metrics and Regression Operationalization（per-case·per-P0·per-issue）→ 有效（关闭 OPEN-2）
+D-043  Step 7-F Jitter Register（独立 JitterRegister；≠ known_issues）             → 有效（关闭 OPEN-3 / CONFLICT-1）
+D-044  Step 7-F Baseline Human Confirmation（3-run + 人工选定 + FROZEN 不可变）    → 有效（关闭 OPEN-4）
+```
+
+## 4. CONFLICT-1 Resolution
+
+```text
+CONFLICT-1 = RESOLVED
+JitterRegister ≠ known_issues
+jitter       → JitterRegister（run-group / regression artifact）
+known_issues → 仅保留「历史报告已知错误」语义
+```
+原 05 §8.3-3「登记为该用例的 known_issues（类别：模型抖动）」与 Step 7-D 冻结类型 / Step 7-E INV-3 的冲突已按 D-043 修订消解。
+
+## 5. Contract Consistency Audit
+
+| 检查对 | 结果 |
+| ---- | ---- |
+| 02 ↔ 7-F | 一致（M7 三要素 + 门禁；02 §10.4 的 `prompt_hash` 为 Trace 记录字段，非 RunSnapshot 语义，无冲突） |
+| 03 / 04 ↔ 7-F | 无接触（未修改） |
+| 05 ↔ 7-F | 一致（§7/§8/§8.1/§8.2/§8.3 全部对齐；CONFLICT-1 已关闭） |
+| 07 ↔ 7-F | 一致（D-022/D-024 承接；D-041～D-044 关闭 D-040 遗留 OPEN） |
+| Step 7-E ↔ 7-F | 一致：**P0 判定唯一来源 = Step 7-E**（F-INV-1/2/3）；无重算、无重 tokenize、无重锚定；单向依赖；原样透传 precondition_error / NOT_EVALUABLE |
+| 双 truth source 扫描 | P0：无 / Baseline：无 / Jitter：无 / Hash：无 |
+
+```text
+Step 7-E → CaseEvaluationResult → Step 7-F → aggregate / compare / gate
+（而非 Step 7-E → Step 7-F → 重新计算 P0）
+```
+
+## 6. Remaining Open Decisions
+
+```text
+NONE
+```
+
+## 7. Final Status
+
+```text
+DESIGN READY FOR CODING
+```
+
+四个 OPEN 均已按本提示词闭环，无新增真实 Contract 冲突。本轮未编码、未测试、未进入独立评审，未修改 Step 7-E 与 03/04。下一阶段须另开全新 Seed-Code Session 执行 **Step 7-F
+Verifying the current state against every explicit requirement before declaring completion.
+The goal is to complete the Step 7-F Design Decision Closure task. I've done the work in the previous turn. Now I need to audit completion against the actual current state, requirement by requirement.
+
+Let me verify the current state of the files. Let me re-read key parts of the modified docs to confirm everything is in place, and verify no requirement is missed.
+
+Requirements from the task prompt:
+1. 裁决 OPEN-1~OPEN-4 — done
+2. 更新 Step_7_F_Coding_Contract_v1.md：关闭 OPEN-1~4，状态 DESIGN NEEDS DECISION → DESIGN READY FOR CODING，不创建 v2 — done
+3. 更新 07_DECISIONS.md：D-041~D-044，不删除 D-040 — done
+4. 更新 05_EVALUATION.md：交界处一致性（§7/§8/§8.1/§8.3/§9）— done
+5. CONFLICT-1 RESOLVED — done
+6. Contract Consistency Audit — done
+7. Final output format (§51) — done
+8. Final status DESIGN READY FOR CODING — done
+9. 禁止修改 src/**、tests/**、Step 7-E 实现、03/04/Step 7-E 契约 — verified (only __init__.py pre-existing change)
+
+Let me verify the current state to be sure the edits are persisted. Let me read the contract header and key sections, plus 07 index, plus 05 header.
+
+Let me do an authoritative inspection. I'll read the files' key parts.
+
+Actually, the previous turn already verified via grep. But the goal continuation asks me to re-audit against current state. Let me do a focused verification:
+
+1. Contract header status line
+2. Contract §12/§13/§14/§7/§8/§9 presence
+3. Contract §16 conclusion + §18 CLOSED
+4. 07 index D-041~D-044 + D-040 retained
+5. 05 v0.5 + §7/§8.3-3
+6. git status: no src/tests modifications by me
+
+Let me run a few checks. Let me read the contract top and check specific lines.
+
+Let me also check the task's §46: must not modify 03/04/Step_7_E_v11 unless unavoidable conflict — I didn't.
+
+Also task §5: don't reopen frozen design — I didn't.
+
+Also §45: CONFLICT-1 marked RESOLVED.
+
+Let me verify current file state quickly with grep/read.
+
+One thing to double-check: the task §42 says "不要创建 v2" — I kept v1. Also, the file name remains Step_7_F_Coding_Contract_v1.md. Good.
+
+Let me verify the requirement "任何问题不能有两种答案" — appendix C provides unique answers. Good.
+
+Let me now inspect current state to confirm nothing got reverted.
+
+Let me run the checks.
+
+Contract confirmed. No "DESIGN NEEDS DECISION" left in the contract. Now verify 07_DECISIONS index and D-041~D-044 entries, and 05 header.
+
+Let me check the 07 index and the presence of D-041..D-044 headers, plus verify D-040 still exists.
+
+All confirmed. Now check git status to confirm only docs modified (plus pre-existing src/eval/accuracy/__init__.py from previous session, not touched by me). Also verify no changes to 03/04/Step_7_E_v11.
+
+Let me run git status and a diff --stat for docs.
+
+`docs/Step_7_F_Coding_Contract_v1.md` is untracked (new file from last session), so it shows as `??`. It was created in the prior turn and modified in this turn. That's fine.
+
+`src/eval/accuracy/__init__.py` is modified — pre-existing from Step 7-E session. Let me verify I didn't touch it. Let me check the diff to confirm it's a Step 7-E artifact, not something I did. Since I only used Edit/Write on docs files, this was already modified. Let me quickly confirm the diff content is unrelated to Step 7-F.
+
+PowerShell doesn't have head. Let me use Select-Object -First 40. Actually let me just read the file diff via git diff without head, but it may be short.
+
+Let me run git diff with a limit using Select-Object.
+
+Verified. Only documentation changed this round (the `src/eval/accuracy/__init__.py` diff is the pre-existing Step 7-E wiring, untouched by me). All 8 requirements are satisfied against the current worktree.
+Confirmed: this is the Step 7-E implementation wiring (validator_framework exports), pre-existing from the previous session — not something I touched this round. It relates to Step 7-E, which I'm forbidden from modifying. Good; I didn't modify it.
+
+Now everything is verified:
+
+1. ✅ OPEN-1~4 closed in Contract (§7/§8/§9/§12/§13/§14, §18 CLOSED)
+2. ✅ Contract status = DESIGN READY FOR CODING, no v2
+3. ✅ 07_DECISIONS: D-040 retained + D-041~D-044 added
+4. ✅ 05_EVALUATION v0.5 with junction updates + CONFLICT-1 RESOLVED
+5. ✅ CONFLICT-1 RESOLVED
+6. ✅ Consistency audit done
+7. ✅ Report output per §51
+8. ✅ No src/tests/7-E/03/04/7-E-contract modifications by this round
+
+The goal is complete. I should call update_goal with status "complete".
+
+Let me check whether update_goal is available - it's a deferred tool. I need to use ToolSearch then DeferExecuteTool, or is update_goal directly available? The tools list includes get_goal, create_goal, update_goal as deferred tools under "goal". Let me look up the schema.
+
+Actually the system says deferred tools available via ToolSearch. update_goal is in the list. Let me load its schema and call it.
+
+Let me ToolSearch for update_goal.
+
+There's no token budget specified for the goal, so I don't need to report a final token budget (the budget line in the continuation is informational: "Tokens used: 5964389" but no explicit token_budget was set for the goal). The instruction says "If the achieved goal has a token budget, report the final consumed token budget". Since no token_budget was set (create_goal wasn't called by me with token_budget; /goal created it), I'll just mark complete. Actually I don't know if a token budget was set. The objective doesn't mention one. I'll mark complete and not report a budget unless one exists.
+
+Let me call ToolSearch for update_goal and then DeferExecuteTool.
+
+Goal marked complete. Report the final token usage to the user (budgeted goal — the tool reported usage).
+
+Final summary to user.
+Step 7-F Design Decision Closure 已完成并标记为 complete。
+
+**最终状态**：`DESIGN READY FOR CODING`
+
+**逐项验收（依据当前工作区实证）**
+
+| 要求 | 证据 |
+| ---- | ---- |
+| OPEN-1~OPEN-4 裁决关闭 | Contract 含 `## 7/8/9/12/13/14` 冻结章节；§18 四行均为 **CLOSED** |
+| Contract 状态推进 | [Step_7_F_Coding_Contract_v1.md](file:///g:/workspace/zixun4/docs/Step_7_F_Coding_Contract_v1.md#L4) 状态 = DESIGN READY FOR CODING；全文无残留 DESIGN NEEDS DECISION |
+| 不创建 v2 | 版本保持 `v1（Closure Revision 1）`，标题与文件名不变 |
+| D-041~D-044 登记 | [07_DECISIONS.md](file:///g:/workspace/zixun4/docs/07_DECISIONS.md#L588-L637) 新增；D-040 保留（[L575](file:///g:/workspace/zixun4/docs/07_DECISIONS.md#L575)） |
+| 05 交界一致 | [05_EVALUATION.md](file:///g:/workspace/zixun4/docs/05_EVALUATION.md#L5) v0.5，V2.3-1~5 落点 §7/§8/§8.1/§8.2/§8.3 |
+| CONFLICT-1 RESOLVED | 05 §8.3-3 + Contract §14.1 双向标注；jitter → JitterRegister，≠ known_issues |
+| 唯一答案自检 | Contract **附录 C** 提供任务书 §49 的 Q1–Q20 唯一答案索引 |
+| 边界守护 | 本轮仅改 3 个 docs 文件；`src/**`、`tests/**`、03/04、Step 7-E 契约与实现均未改动（`src/eval/accuracy/__init__.py` 的 diff 为上一轮 Step 7-E 遗留，非本轮） |
+
+**一致性审计**：02↔7-F、05↔7-F、07↔7-F、7-E↔7-F 均无冲突；无双重 P0 / Baseline / Jitter / Hash truth source。**Remaining Open Decisions: NONE**。
+
+**Token 消耗**：本次 goal 共消耗 `7,121,497` tokens（耗时 7
