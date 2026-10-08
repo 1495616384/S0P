@@ -1,0 +1,568 @@
+用户要求对 Step 7-F 进行最终验收和冻结，这是一个严格的只读审查任务。我需要：
+
+1. 先加载 plan-mode skill
+2. 读取所有相关证据文件
+3. 运行测试验证当前状态
+4. 建立 Final Acceptance Matrix
+5. 最终输出验收报告
+
+让我先加载 skill，然后开始系统性地收集证据。
+
+好的，这是一个严格的只读审查任务——Step 7-F Final Acceptance & Final Freeze。让我系统性地收集所有证据，建立最终验收矩阵。
+
+首先，我需要读取所有相关文档、源代码和测试：
+好的，我现在在 Plan Mode。这是一个严格的只读审查任务——Step 7-F Final Acceptance & Final Freeze。用户已明确这不是 coding round，不能修改源代码。我需要：
+
+1. 读取所有相关证据文件
+2. 运行测试
+3. 建立验收矩阵
+4. 输出最终报告
+
+由于这是一个只读分析任务（非 edit request），我可以直接开始收集证据。让我先看一下项目结构和关键文档。
+
+现在并行读取所有关键文件：
+好的，文件都找到了。现在让我并行读取所有关键文档和源代码，建立完整的证据库。
+
+现在运行测试验证当前状态，同时检查 `__init__.py` 导出和 git log：
+好的，我已经读取了所有关键文件。现在让我运行测试来验证当前状态，并检查独立评审记录。
+
+PowerShell 不支持 `tail`，让我重跑：
+PowerShell 不支持 tail，让我用 Select-Object -Last 代替。
+
+现在运行排除 collection error 的回归测试，并验证 Step 7-E export 问题：
+完美！现在让我也运行除了有 collection error 的文件之外的测试来验证 regression 通过情况。同时也查看一下 Step 7-E 的 export defect 确认一下。
+
+好的，所有证据已收集完毕。现在调用 AdvisorTool 进行最终审查：
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+好的，继续完成剩余验证项：
+好，完美的证据链。现在让我调用 AdvisorTool 进行最终审查，然后生成 Final Acceptance & Final Freeze 报告。
+
+证据总结：
+1. Step 7-F tests: **139 passed**
+2. 排除 collection error 的回归：**284 passed**（包括 test_step7f.py 139 + test_accuracy + test_loader + test_validator + test_types）
+3. Full suite collection error: ImportError `cannot import name 'RuleStatus' from 'eval.accuracy'` —— **PRE-EXISTING Step 7-E export defect**
+4. hash_utils.py: 严格 RFC 8785 JCS + SHA-256 + UTF-8，使用 `rfc8785` 包，不是 `json.dumps(sort_keys=True)`
+5. models.py: 全部 Contract 定义的数据结构，Baseline 的 FROZEN 状态、validate_calibration_group、freeze() 都正确
+6. runner.py: 正确调用 Step 7-E evaluate_case()，不重算 P0，GateDecision 逻辑正确，Regression issue_id 集合差正确，JitterRegister 独立载体
+
+现在让我调用 AdvisorTool 确认。
+正在请求专家建议.......
+
+已获取专家建议
+
+好，AdvisorTool 给了很好的建议。让我先完成剩余的验证：
+
+1. 运行完整测试套件（排除 collection error）
+2. 在 Contract 中搜索禁止的偏差词
+3. 验证 runner.py 只导入 Step 7-E 的公开接口
+4. 检查 git log
+
+然后写 Final Freeze Report。
+
+让我再检查一下 Step 7-F 代码的 git 状态：
+完美！所有验证完成：
+
+1. ✅ **Step 7-F tests: 139 passed**
+2. ✅ **Full regression suite (excluding collection error): 412 passed**
+3. ✅ **Full suite: 1 collection error (PRE-EXISTING Step 7-E export defect)**
+4. ✅ **Contract deviation search: NONE — 禁止词未出现在 Contract 中**
+5. ✅ **hash_utils.py: RFC 8785 JCS + SHA-256 + UTF-8，使用 rfc8785 包**
+6. ✅ **models.py: D-041~D-044 全部实现**
+7. ✅ **runner.py: import 只来自 eval.accuracy.validator_framework 和 eval.accuracy.data_structures**
+8. ✅ **Baseline freeze 语义正确：3-run calibration + human confirmation + FROZEN 不可修改**
+9. ✅ **Gate 逻辑正确：gold_count==0 → NOT_EVALUABLE；gold<5 → non-blocking；gold>=5 FAIL → blocking**
+10. ✅ **Regression: issue_id 集合差 + per-case per-P0 回归，不被平均分掩盖**
+11. ✅ **JitterRegister: 独立载体，≠ known_issues，≠ P0 规则**
+12. ✅ **07_DECISIONS.md 只有 D-001~D-027（D-041~D-044 未登记 = N-1 non-blocker）**
+13. ✅ **git log 有 Step 7-E 和 Step 7-D 证据，但 Step 7-F 的代码实现 commit 似乎还没在 git 中？或者是用不同的 commit message？**
+
+等等，让我检查一下 Step 7-F 的代码是不是真的已经在本地了但 git 还没 commit？或者说用户说的 GitHub archive 只是设计文档，代码在本地但未提交？
+
+让我检查一下文件是否在 git 中：
+
+所有证据已收集完毕。现在生成 **Step 7-F Overall Acceptance & Final Freeze Report**：
+好，关键信息完整了：
+
+1. Step 7-F 代码（src/eval/run/ 和 tests/eval/test_step7f.py）是 `??`（untracked），说明本地有但还没 commit 到 git。这与用户说的"GitHub 只作为 Design Archive"一致——代码实现还没提交。
+2. runner.py 只从 eval.accuracy.validator_framework 和 eval.accuracy.data_structures 导入——没有重实现 Step 7-E 的任何逻辑。
+
+现在所有证据齐全了。让我生成 Final Freeze 报告。用户说这是只读审查，不要修改源代码，但 Final Freeze 报告是归档文档。让我把它写到 docs/ 目录。
+
+不过等一下，用户说"NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User." 但用户明确说了"最终输出：Step 7-F Overall Acceptance & Final Freeze Report"，所以这是明确请求的。
+
+让我生成这个报告。
+
+好的，报告已生成。现在调用 AdvisorTool 做最后审查，然后输出最终结论。
+正在请求专家建议...
+
+已获取专家建议
+
+好的，AdvisorTool 确认报告完整，可以最终输出结论了。
+现在调用 AdvisorTool 做最终审查：
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+---
+
+# Step 7-F Overall Acceptance & Final Freeze — 最终结论
+
+## 验收矩阵（一页版）
+
+| | Contract | Implementation | Test | Review | **Final** |
+|---|---|---|---|---|---|
+| **D-041 RFC 8785 JCS** | ✅ | ✅ rfc8785 包 + SHA-256 + UTF-8 | ✅ 30+ JCS 测试 | ✅ | **PASS** |
+| **D-042 Regression** | ✅ | ✅ issue_id 集合差 + per-case per-P0 | ✅ 8 regression 测试 | ✅ | **PASS** |
+| **D-043 Jitter** | ✅ | ✅ JitterRegister 独立载体 | ✅ 6 jitter 测试 | ✅ | **PASS** |
+| **D-044 Baseline** | ✅ | ✅ 3-run + 人工确认 + FROZEN | ✅ 8 baseline 测试 | ✅ | **PASS** |
+| **Step 7-E 边界** | ✅ | ✅ 仅 import validator_framework | ✅ 2 边界测试 | ✅ | **PASS** |
+| **Contract Deviation** | ✅ NONE | — | Grep 0 匹配 | ✅ | **NONE** |
+
+## 证据数字
+
+```text
+Step 7-F tests:         139 passed
+Full regression:        412 passed  (排除 pre-existing collection error)
+Full suite:             1 collection error  (PRE-EXISTING Step 7-E 导出缺陷)
+BLOCKER:                0
+```
+
+## 三个 Non-Blocker（已正式登记）
+
+1. **N-1**：D-041~D-044 未登记到 07_DECISIONS.md → Documentation governance follow-up
+2. **N-2**：`_compute_four_hashes` artifact `byte_size=0` → Caller/Loader 责任，非 D-041 blocker
+3. **P-1**：`eval.accuracy` 根包未导出 `RuleStatus` → PRE-EXISTING Step 7-E defect，**不影响 Step 7-F 验收**
+
+## Final Status
+
+```
+STEP 7-F OVERALL ACCEPTANCE = ACCEPTED
+STEP 7-F FINAL FREEZE       = FROZEN
+```
+
+Step 7-F 的设计和实现语义正式成为后续阶段的冻结基线。
+
+## 下一阶段
+
+```
+Step 8 Design Discovery — 另开全新 Seed-Code Session
+
+本 Session 到此结束。禁止提前进入 Step 8。
+```
+
+完整报告见 [Step_7_F_Final_Freeze.md](file:///g:/workspace/zixun4/docs/Step_7_F_Final_Freeze.md)。
+# Step 7-F Overall Acceptance & Final Freeze Report
+
+> **日期**：2026-10-08
+> **阶段**：OVERALL ACCEPTANCE / FINAL FREEZE
+> **前置完成**：Design Discovery ✅ → Design Decision Closure ✅ → Coding ✅ → RFC 8785 JCS Repair ✅ → Independent Review ✅ (ACCEPT WITH NON-BLOCKERS)
+> **Session 边界**：只读审查，禁止修改源代码、Contract、Step 7-E、D-041\~D-044 既定语义、禁止提前进入 Step 8
+
+***
+
+## 1. Executive Summary
+
+**Step 7-F Overall Acceptance = ACCEPTED**
+
+**Step 7-F Final Freeze = FROZEN**
+
+理由：
+
+- BLOCKER = 0
+- Contract Deviation = NONE
+- D-041 / D-042 / D-043 / D-044 全部 Contract 语义与实现一致
+- Step 7-F 专属测试 139 passed
+- 全量回归（排除 pre-existing collection error）412 passed
+- Independent Review = ACCEPT WITH NON-BLOCKERS（N-1 / N-2 / P-1 已正式登记）
+- Step 7-E 边界清晰：runner 唯一 P0 truth source = evaluate\_case()，无重算
+
+Step 7-F 设计与实现语义正式成为后续阶段的冻结基线。
+
+***
+
+## 2. Final Acceptance Matrix
+
+| 项目                             | Contract (§)   | Implementation                                                                                                                     | Test                                                                                            | Independent Review | Final    |
+| ------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------ | -------- |
+| **D-041 RFC 8785 JCS**         | §12 全文         | `hash_utils.py` 使用 `rfc8785.dumps` + SHA-256 + UTF-8 编码，不是 `json.dumps(sort_keys=True)`                                            | 30+ JCS 测试（附录 B 数字、1.0 vs 1、科学计数法、Unicode、NaN/Infinity 拒绝）                                      | ✅ PASS             | **PASS** |
+| **SHA-256**                    | §12.1          | `hashlib.sha256(canonical_bytes).hexdigest()`                                                                                      | `test_uses_sha256` 验证 64 字符 hex                                                                 | ✅ PASS             | **PASS** |
+| **UTF-8**                      | §12.1          | `canonical_bytes()` 返回 UTF-8 bytes；`canonical_json()` decode("utf-8")                                                              | `test_unicode` 系列验证字面量 vs 转义等价                                                                  | ✅ PASS             | **PASS** |
+| **Four Hash 统一 canonicalizer** | §12.6          | `sha256_hash()` 为唯一入口；四个 compute 函数均调用它                                                                                            | `TestFourHashes` 四哈希各自测试 + `TestHashVsIdentityMetadata` 对抗测试                                    | ✅ PASS             | **PASS** |
+| **D-042 Regression**           | §8 + §13       | `_compute_regression()`：issue\_id 集合差 + case\_status 对比 + per-P0 回归 + `case_ids` 一致性 precondition                                  | `TestRegressionSetDiff` + `TestRegressionPrecondition` + `TestCaseRegression` + `TestP0Metrics` | ✅ PASS             | **PASS** |
+| **D-043 Jitter**               | §14            | `JitterRegister` 独立载体；`detect_jitter()` 仅 3-run calibration 使用；不进 known\_issues、不进 P0                                              | `TestJitterRegister` + `TestJitterDetection` 6 个测试                                              | ✅ PASS             | **PASS** |
+| **D-044 Baseline**             | §7             | `Baseline` dataclass：`validate_calibration_group`（6 字段一致性）+ `freeze(confirmed_by)` + `can_use_for_regression()` + DRAFT/FROZEN 状态机 | `TestBaseline` 8 个测试覆盖生命周期                                                                      | ✅ PASS             | **PASS** |
+| **Step 7-E boundary**          | §2 + F-INV-1/2 | runner 只 import `eval.accuracy.validator_framework` 和 `eval.accuracy.data_structures`；`evaluate_case()` 唯一 P0 truth source         | `TestRunnerInvokesStep7E` + `TestStep7EConsumption`                                             | ✅ PASS             | **PASS** |
+| **Contract integrity**         | 全文             | 禁止词搜索：`deterministic JSON` / `approximately canonical` / `implementation-defined` / `RFC 8785 compatible` → NONE                   | Grep 全文确认 0 匹配                                                                                  | ✅ PASS             | **PASS** |
+
+***
+
+## 3. Evidence
+
+### 3.1 Step 7-F 专属测试
+
+```text
+tests/eval/test_step7f.py  →  139 passed in 0.29s
+```
+
+覆盖 Contract §15 F-T-1 \~ F-T-16 + 对抗测试 + RFC 8785 Appendix B + JCS 对抗矩阵。
+
+### 3.2 全量回归（排除 collection error）
+
+```text
+tests/ (excluding test_validator_framework.py)  →  412 passed in 0.58s
+```
+
+包含：
+
+- `tests/cdm/` Canonical Data Model 全套
+- `tests/eval/test_step7f.py` Step 7-F 专属
+- `tests/eval/test_accuracy.py` Step 7-E 精度验证
+- `tests/eval/test_loader.py` Loader
+- `tests/eval/test_types.py` 类型
+- `tests/eval/test_validator.py` Step 7-D 验证器
+
+### 3.3 Full Suite 状态
+
+```text
+tests/eval/test_validator_framework.py  →  Collection Error
+    ImportError: cannot import name 'RuleStatus' from 'eval.accuracy'
+```
+
+**定性**：PRE-EXISTING Step 7-E export defect（`src/eval/accuracy/__init__.py` 未导出 `RuleStatus`）。
+
+**与 Step 7-F 的关系**：不相关。Step 7-F 的 runner.py 正确地从 `eval.accuracy.validator_framework` 直接导入 RuleStatus，不依赖 `eval.accuracy` 根包的导出。
+
+### 3.4 Source Code 完整性
+
+| 文件                           | 行数    | 状态 | 说明                                  |
+| ---------------------------- | ----- | -- | ----------------------------------- |
+| `src/eval/run/hash_utils.py` | 254   | ✅  | RFC 8785 JCS + SHA-256 四哈希          |
+| `src/eval/run/models.py`     | 497   | ✅  | D-041\~D-044 全部数据结构                 |
+| `src/eval/run/runner.py`     | 764   | ✅  | Run / Regression / Gate / Jitter 编排 |
+| `src/eval/run/__init__.py`   | 100   | ✅  | 公共 API 导出                           |
+| `tests/eval/test_step7f.py`  | 1154+ | ✅  | 139 测试                              |
+
+### 3.5 Git 状态
+
+```text
+src/eval/run/        → ?? (untracked)
+tests/eval/test_step7f.py  → ?? (untracked)
+```
+
+**说明**：Step 7-F 代码尚未 commit 到 git。这是 Session 工作副本，不影响代码质量验证。git 作为 Design Archive（Contract + Decisions），代码 commit 是后续独立动作。
+
+***
+
+## 4. Independent Review Result
+
+```text
+ACCEPT WITH NON-BLOCKERS
+```
+
+Review 确认：
+
+- 实现满足 Contract v1 全部条件
+- RFC 8785 JCS Repair Round 修正了 canonicalization 路径
+- F-INV-1 / F-INV-2 边界正确（runner 不重算 P0）
+- 无 P0 blocker
+
+***
+
+## 5. Known Non-Blockers（正式登记）
+
+### N-1：D-041\~D-044 未单独登记到 07\_DECISIONS.md
+
+| 属性      | 值                                                                              |
+| ------- | ------------------------------------------------------------------------------ |
+| **性质**  | Documentation Governance Non-Blocker                                           |
+| **位置**  | `docs/07_DECISIONS.md` 索引止于 D-027                                              |
+| **修复**  | 不修复（不修改 Contract）                                                              |
+| **处置**  | follow-up documentation item — 后续 Step 开始前追加 D-041\~D-044 条目到 07\_DECISIONS.md |
+| **不影响** | Contract 语义、实现正确性、测试通过                                                         |
+
+### N-2：\_compute\_four\_hashes artifact byte\_size=0
+
+| 属性      | 值                                                     |
+| ------- | ----------------------------------------------------- |
+| **性质**  | Caller/Loader Responsibility Observation              |
+| **位置**  | `runner.py` `_compute_four_hashes()` L469 / L493      |
+| **原因**  | minimal implementation 用 byte\_size=0，真实 loader 会填实际值 |
+| **修复**  | 不修复（caller 责任，loader 层实现时处理）                          |
+| **不影响** | D-041 语义（哈希正确性不依赖 byte\_size 非零）                      |
+
+### P-1：Step 7-E export defect（PRE-EXISTING）
+
+| 属性      | 值                                                                                             |
+| ------- | --------------------------------------------------------------------------------------------- |
+| **性质**  | Pre-Existing Step 7-E Defect                                                                  |
+| **位置**  | `src/eval/accuracy/__init__.py` 未导出 `RuleStatus`、`CaseStatus`、`P0_RULE_IDS`、`evaluate_case` 等 |
+| **症状**  | `tests/eval/test_validator_framework.py` collection error                                     |
+| **来源**  | Step 7-E B5 编码阶段引入，与 Step 7-F 无关                                                              |
+| **修复**  | **本 Session 不修复**（禁止修改 Step 7-E）                                                              |
+| **处置**  | 登记为已知问题；后续 Step 7-E 独立修复 Round 处理                                                             |
+| **不影响** | Step 7-F 验收、回归测试完整性（412 passed 排除了这个文件）                                                       |
+
+***
+
+## 6. Contract Deviation
+
+```text
+NONE
+```
+
+验证方法：
+
+1. 全文 Grep 禁止词：`deterministic JSON` / `approximately canonical` / `implementation-defined` / `RFC 8785 compatible` → **0 匹配**
+2. Contract §12.1 原文：
+   > `CanonicalJSON(value) = RFC 8785 JSON Canonicalization Scheme`
+   > `编码 = UTF-8`
+   > `Hash = SHA-256(bytes)`
+   > 实现完全对齐，无任何放宽
+3. D-041\~D-044 裁决结果在 Contract §18 OPEN 决策汇总表中逐项对应
+4. §17 禁止项全文未被违反
+
+***
+
+## 7. Step 7-E Boundary Verification
+
+### 7.1 Import 边界
+
+runner.py 的 import 语句（全部）：
+
+```python
+from eval.accuracy.validator_framework import (
+    RuleStatus, CaseStatus, P0_RULE_IDS, TrustedInput,
+    CaseEvaluationResult, evaluate_case,
+)
+from eval.accuracy.data_structures import ActualIssue
+```
+
+**只有两个来源**：`eval.accuracy.validator_framework` + `eval.accuracy.data_structures`。
+
+无任何对 tokenizer / anchor / validator 内部模块的导入。
+
+### 7.2 P0 Truth Source 验证
+
+runner.py L552-556：
+
+```python
+# ← ONLY P0 truth source: Step 7-E evaluate_case()
+eval_result: CaseEvaluationResult = evaluate_case(
+    trusted=trusted,
+    system=system,
+)
+```
+
+唯一 P0 判定来源。runner 消费返回值，不重算。
+
+### 7.3 RunRequest 边界
+
+Contract §1.3 冻结的描述：
+
+```text
+Step 7-E：「这个 Case 对不对？」
+Step 7-F：「这一次 Run 是否通过 Regression / Baseline / Gate？」
+```
+
+实现完全对齐：
+
+- CaseResult 所有判定字段透传 `eval_result.*.value`
+- GateDecision 只看 case\_status / rule\_statuses（Step 7-E 产出）
+- Regression 只比较 issue\_id / case\_status / rule\_statuses（Step 7-E 产出）
+
+***
+
+## 8. D-041\~D-044 Frozen Semantics Final Confirmation
+
+### D-041 Hash Canonicalization ✅
+
+| 确认项                                           | 状态                      |
+| --------------------------------------------- | ----------------------- |
+| RFC 8785 JCS（不是 `json.dumps(sort_keys=True)`） | ✅                       |
+| UTF-8 编码                                      | ✅                       |
+| SHA-256 哈希                                    | ✅                       |
+| 四个哈希用同一个 canonicalizer                        | ✅ `sha256_hash()` 为唯一入口 |
+| input\_hash: InputManifest (logical\_id 排序)   | ✅                       |
+| params\_hash: EffectiveRuntimeParameters      | ✅                       |
+| prompt\_hash: EffectivePromptPackage          | ✅                       |
+| output\_hash: OutputManifest (logical\_id 排序) | ✅                       |
+| 不参与判定                                         | ✅                       |
+
+**未来禁令**：禁止重新引入 `json.dumps(sort_keys=True, ...)` 作为 hash canonicalizer。违反 = 新 Contract 修订。
+
+### D-042 Regression ✅
+
+| 确认项                         | 状态                                              |
+| --------------------------- | ----------------------------------------------- |
+| per-case regression 记录      | ✅                                               |
+| per-P0 regression 记录        | ✅                                               |
+| per-issue set diff          | ✅                                               |
+| NOT\_EVALUABLE 不自动变 PASS    | ✅ `test_not_evaluable_not_converted_to_pass`    |
+| gate 独立于 regression         | ✅                                               |
+| 平均分不掩盖个案回归                  | ✅ `test_improvement_does_not_cancel_regression` |
+| case\_ids 一致性 precondition  | ✅ `test_case_ids_mismatch_error`                |
+| P0Metric 分母含 NOT\_EVALUABLE | ✅ `test_not_evaluable_enters_denominator`       |
+
+### D-043 Jitter ✅
+
+| 确认项                                  | 状态                                                        |
+| ------------------------------------ | --------------------------------------------------------- |
+| 独立 JitterRegister（≠ known\_issues）   | ✅                                                         |
+| 仅 model\_version\_snapshot change 触发 | ✅                                                         |
+| 3-run calibration 检测                 | ✅                                                         |
+| jitter\_rate → P2 diagnostic         | ✅                                                         |
+| 不进入 P0 判定                            | ✅ `test_jitter_not_p0_rule`                               |
+| 不自动免除 P0 FAIL                        | ✅ `test_jitter_not_auto_generated_on_ordinary_regression` |
+
+### D-044 Baseline ✅
+
+| 确认项                                            | 状态                                                                                        |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 3-run calibration validation                   | ✅ `validate_calibration_group()`                                                          |
+| 6 字段 identity check                            | ✅ input\_hash / params\_hash / prompt\_hash / skill / template / model\_version\_snapshot |
+| Human Review (`confirmed_by` + `confirmed_at`) | ✅ `freeze(confirmed_by)`                                                                  |
+| DRAFT → FROZEN 状态机                             | ✅                                                                                         |
+| FROZEN 后不可修改                                   | ✅ `can_use_for_regression()` 只认 FROZEN                                                    |
+| FROZEN baseline 才能参与 regression/gate           | ✅ `compute_regression()` 检查                                                               |
+| DRAFT baseline 被拒绝                             | ✅ `test_draft_cannot_be_used_for_regression`                                              |
+| 任何 run 不自动成为 baseline                          | ✅ `test_auto_baseline_forbidden`                                                          |
+
+***
+
+## 9. Final Test Record
+
+```text
+Step 7-F专属: 139 passed ✅
+全量回归(排除collection error): 412 passed ✅
+Full suite: collection error ❌ (PRE-EXISTING Step 7-E export defect)
+```
+
+不得声称 "Full suite passed"。必须明确：
+
+```text
+FULL SUITE = NOT CLEAN
+原因 = PRE-EXISTING Step 7-E export defect (RuleStatus not exported from eval.accuracy)
+```
+
+同时保留：
+
+```text
+Step 7-F = GREEN
+Regression = GREEN
+```
+
+***
+
+## 10. Post-Freeze Forbidden Items
+
+Freeze 完成后，禁止以下操作（除非新 Decision + 新 Change Round + 重新 Review）：
+
+### 10.1 源代码修改禁令
+
+```text
+hash_utils.py   ← 禁止无理由修改
+models.py       ← 禁止无理由修改
+runner.py       ← 禁止无理由修改
+```
+
+### 10.2 语义重解释禁令
+
+```text
+D-041 RFC 8785 JCS        ← 禁止降级为 json.dumps(sort_keys=True)
+D-042 Regression         ← 禁止放宽为只看平均分 / 禁止只比较交集
+D-043 Jitter             ← 禁止并入 known_issues / 禁止作为 P0 rule
+D-044 Baseline           ← 禁止自动冻结 / 禁止 DRAFT baseline 参与 gate
+Step 7-E boundary        ← 禁止 Step 7-F 重算 P0 / 重 tokenize / 重锚定
+RuleStatus / CaseStatus  ← 禁止重新定义
+Gate 判定逻辑            ← 禁止修改优先级表
+```
+
+### 10.3 Step 8 提前实现禁令
+
+```text
+Step 8 = 新 Seed-Code Session
+禁止在本 Session 末尾偷偷实现任何 Step 8 内容
+禁止因为 Step 8 需求而修改 Step 7-F 代码或语义
+```
+
+***
+
+## 11. Final Status
+
+```text
+┌─────────────────────────────────────────────────┐
+│ BLOCKER COUNT              = 0                  │
+│ CONTRACT DEVIATION         = NONE               │
+│ D-041 ~ D-044              = ALL PASS           │
+│ Step 7-F tests             = 139 PASS           │
+│ Full regression            = 412 PASS           │
+│ Independent Review         = ACCEPT WITH NON-   │
+│                             BLOCKERS            │
+│ Known Non-Blockers         = FORMALLY RECORDED  │
+│                                                 │
+│ STEP 7-F OVERALL ACCEPTANCE = ACCEPTED          │
+│ STEP 7-F FINAL FREEZE       = FROZEN            │
+│                                                 │
+│ Step 7-F design and implementation semantics     │
+│ are now the frozen baseline for subsequent      │
+│ phases.                                         │
+└─────────────────────────────────────────────────┘
+```
+
+***
+
+## 12. Next Step
+
+```text
+Step 7-F 已冻结。
+
+下一阶段：
+    Step 8 Design Discovery
+
+Step 8 必须另开全新 Seed-Code Session。
+禁止在本 Session 末尾启动任何 Step 8 相关工作。
+```
+
+***
+
+## 13. Evidence Appendix
+
+### 13.1 完整测试输出（关键摘要）
+
+```text
+$ python -m pytest tests/eval/test_step7f.py -v
+============================= 139 passed in 0.29s =============================
+
+$ python -m pytest tests/ --ignore=tests/eval/test_validator_framework.py
+============================= 412 passed in 0.58s =============================
+
+$ python -m pytest tests/eval/
+ImportError: cannot import name 'RuleStatus' from 'eval.accuracy'
+============================= 1 error in 0.29s =============================
+```
+
+### 13.2 Contract 禁止词搜索
+
+```text
+Grep pattern: deterministic JSON | approximately canonical |
+              implementation-defined | RFC 8785 compatible
+Result: 0 matches in docs/Step_7_F_Coding_Contract_v1.md
+```
+
+### 13.3 关键代码片段定位
+
+| 验证项                   | 文件              | 位置                                                |
+| --------------------- | --------------- | ------------------------------------------------- |
+| RFC 8785 导入           | `hash_utils.py` | L53 `from rfc8785 import dumps as _rfc8785_dumps` |
+| 唯一 SHA-256 入口         | `hash_utils.py` | L153-161 `sha256_hash()`                          |
+| JCS preprocessing     | `hash_utils.py` | L59-101 `_prepare_value()`                        |
+| runner 调用 7-E         | `runner.py`     | L552-556 `evaluate_case(trusted, system)`         |
+| Gate 优先级表             | `runner.py`     | L222-309 `_compute_gate_decision()`               |
+| Regression issue diff | `runner.py`     | L358-369 `added/resolved/unchanged`               |
+| Baseline freeze       | `models.py`     | L243-267 `Baseline.freeze()`                      |
+| JitterRegister schema | `models.py`     | L416-442                                          |
+
+***
+
+*本报告为 Step 7-F Final Freeze 的唯一归档文档。任何对 Step 7-F 的后续修改必须引用新的 Design Decision 并走完整 Change/Repair + Review 流程。*
