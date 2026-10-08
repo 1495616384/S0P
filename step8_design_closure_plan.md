@@ -28,7 +28,7 @@
 
 ### Discovery Candidate A 复核结论
 
-Candidate A（零 LLM M1-M3 Vertical Slice）仍然是唯一合理候选：
+Candidate A（零 LLM M1-M3 Vertical Slice）仍然是当前推荐候选，但**必须经过本轮 Decision Closure 的证据化后才能正式采用**：
 
 - **唯一能达成架构铁律 M3**（零 LLM 端到端）
 - **唯一能形成真实验证循环**（真实 SystemOutput → Step 7-E）
@@ -37,35 +37,45 @@ Candidate A（零 LLM M1-M3 Vertical Slice）仍然是唯一合理候选：
 - Candidate B（Parser Only）是 A 的子集，无法验证架构
 - Candidate C（Pipeline Orchestrator）是空壳工程，违反 §8.1 结论
 
-**Candidate A 保持为 PROPOSED，需在本 Session 冻结。**
+**Candidate A = PROPOSED，本轮目标：INHERITED / CLOSED 证据化。**
+
+### 决策状态定义（三态）
+
+| 状态                | 含义                               | 处理                   |
+| ------------------- | ---------------------------------- | ---------------------- |
+| **INHERITED** | Frozen Design 已明确，无需重新决策 | 引用 Frozen doc 章节号 |
+| **CLOSED**    | 本轮有充分证据，正式决定           | 记录决策内容和证据     |
+| **OPEN**      | 当前证据不足，需后续决策           | 明确列出需要什么证据   |
+
+严禁为了达到"12/12 CLOSED"而强行关闭。
 
 ### 需要关闭的 12 个决策（D-STEP8-01 ~ D-STEP8-12）
 
-| 决策                                  | 核心问题                                                             | Frozen Document 是否有答案                                          |
-| ------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| D-STEP8-01 Vertical Slice Scope       | 范围边界、模块清单                                                   | 部分（02 §17.2 M1-M3 有定义，但 Step 8 是 M1-M3 的最小切片）       |
-| D-STEP8-02 Fixture Source             | 真实 Excel vs 人工构造                                               | **无**（需要决策）                                            |
-| D-STEP8-03 RawSource → Fact 责任边界 | Parser 做什么？谁做语义映射？                                        | **无**（§五核心问题）                                        |
-| D-STEP8-04 Fact Store 状态机          | candidate→confirmed→missing/conflict→resolved→rejected/confirmed | 部分（CDM §15 定义了状态，但转换逻辑未定义）                       |
-| D-STEP8-05 Conflict resolution        | manual 闸门如何接入？                                                | 部分（CDM §36 说 manual，但接口未定义）                            |
-| D-STEP8-06 First Fact Types           | Step 8 最小 fact_type 集合                                           | 部分（registry 已有 15+ 类型，但需确定 Step 8 首份 fixture 用哪些） |
-| D-STEP8-07 First Compute set          | 1-3 个确定性计算                                                     | **无**（需根据 fixture 选择）                                 |
-| D-STEP8-08 First Criterion operators  | 最小 operator 集合                                                   | 部分（CDN §25.1 有 rule 字段，但 operator 列表未冻结）             |
-| D-STEP8-09 First ConclusionRule       | 最小聚合规则                                                         | 部分（CDM §27.1 有格式，但具体逻辑需根据 fixture）                 |
-| D-STEP8-10 Minimal Report IR output   | 最小合法 IR 结构                                                     | 部分（04 §全文有 Schema，但"最小合法"的判断标准需定义）            |
-| D-STEP8-11 SystemOutput projection    | IR → SystemOutput 的映射规则                                        | **无**（§十六核心问题）                                      |
-| D-STEP8-12 E2E success criteria       | 12 条 S8-S-01 ~ S8-S-12                                              | 部分（Discovery 有 SC-1~SC-5，需细化为 12 条）                      |
+| 决策                                  | 核心问题                                                             | 预期状态                           | 证据来源                                                   |
+| ------------------------------------- | -------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------- |
+| D-STEP8-01 Vertical Slice Scope       | 范围边界、模块清单                                                   | CLOSED                             | 02 §17.2 + Discovery §10 + OOS 列表                      |
+| D-STEP8-02 Fixture Source             | 真实 Excel vs 人工构造                                               | **OPEN → 需调查**           | 检查 workspace 是否有真实 Excel fixture                    |
+| D-STEP8-03 RawSource → Fact 责任边界 | Parser 做什么？谁做语义映射？                                        | CLOSED（结构）+ OPEN（确定性程度） | 02 §7 + §11.3 + 证据：Mapper 是否完全确定性              |
+| D-STEP8-04 Fact Store 状态机          | candidate→confirmed→missing/conflict→resolved→rejected/confirmed | CLOSED                             | CDM §15 + §15.5 revision 链                              |
+| D-STEP8-05 Conflict resolution        | manual 闸门如何接入？                                                | CLOSED                             | CDM §36 + project_memory hard constraint                  |
+| D-STEP8-06 First Fact Types           | Step 8 最小 fact_type 集合                                           | **OPEN → 需 fixture**       | 依赖 D-STEP8-02 的 fixture 字段                            |
+| D-STEP8-07 First Compute set          | 1-3 个确定性计算                                                     | **OPEN → 需 fixture**       | 依赖 fixture 的数据类型                                    |
+| D-STEP8-08 First Criterion operators  | 最小 operator 集合                                                   | INHERITED                          | CDM §25.1 有 rule 字段定义                                |
+| D-STEP8-09 First ConclusionRule       | 最小聚合规则                                                         | **OPEN → 需 fixture**       | 依赖 fixture 的业务判定逻辑                                |
+| D-STEP8-10 Minimal Report IR output   | 最小合法 IR 结构                                                     | INHERITED                          | 04_REPORT_IR.md 全文 Schema                                |
+| D-STEP8-11 SystemOutput projection    | IR → SystemOutput 的字段级映射                                      | **OPEN → 需字段分析**       | 04_REPORT_IR.md vs`src/eval/accuracy/data_structures.py` |
+| D-STEP8-12 E2E success criteria       | 12 条 S8-S-01 ~ S8-S-12                                              | CLOSED                             | Discovery §10 SC-1~SC-5 细化                              |
 
 ### 架构风险复核
 
-| 风险                             | 概率   | 缓解                                                           |
-| -------------------------------- | ------ | -------------------------------------------------------------- |
-| **R1 Parser 膨胀**         | MEDIUM | Parser 只做解析，语义映射留给独立 Mapper 层                    |
-| **R2 Scope 膨胀**          | HIGH   | 严格 OOS 边界；每写一个模块前确认"在 Candidate A Scope 里吗？" |
-| **R3 Synthetic E2E**       | HIGH   | 真实 Excel → 真实 SystemOutput，禁止中间换成 synthetic        |
-| **R4 CDM/IR 二次建模**     | LOW    | 直接复用 src/cdm/types.py 的 Fact 和 SourceRef                 |
-| **R5 IR 二次建模**         | LOW    | 直接复用 SystemOutput dataclass                                |
-| **R6 Step 7-E/F 语义泄漏** | LOW    | F-INV-1/2 冻结，Step 8 只调用 evaluate_case()                  |
+| 风险                             | 概率   | 缓解                                                                             |
+| -------------------------------- | ------ | -------------------------------------------------------------------------------- |
+| **R1 Parser 膨胀**         | MEDIUM | Parsing ≠ Semantic Interpretation 铁律；但 Mapper 是否完全确定性需 fixture 证据 |
+| **R2 Scope 膨胀**          | HIGH   | 严格 OOS 边界；每写一个模块前确认"在 Candidate A Scope 里吗？"                   |
+| **R3 Synthetic E2E**       | HIGH   | 真实 Excel → 真实 SystemOutput，禁止中间换成 synthetic                          |
+| **R4 CDM/IR 二次建模**     | LOW    | 直接复用 src/cdm/types.py 的 Fact 和 SourceRef                                   |
+| **R5 IR 二次建模**         | LOW    | 直接复用 SystemOutput dataclass                                                  |
+| **R6 Step 7-E/F 语义泄漏** | LOW    | F-INV-1/2 冻结，Step 8 只调用 evaluate_case()                                    |
 
 ---
 
@@ -100,70 +110,206 @@ tests/**                       — 零新增测试代码（本 Session 只做设
 
 按用户指定的 14 节输出格式逐步完成：
 
+---
+
+**Step 0: Pre-Check — 收集必需证据**
+
+在写 Decision Matrix 之前，必须先做以下调查：
+
+#### 0a. 检查 workspace 是否有真实 Excel fixture
+
+```text
+搜索范围：
+g:\workspace\zixun4\tests\eval\fixtures\*\inputs\*.xlsx
+g:\workspace\zixun4\**\*.xlsx（排除 .git 和 node_modules）
+其他可能的 Excel 来源目录
+```
+
+如果找到真实 Excel：
+
+- 读取其 sheet/header/row/字段结构
+- 记录实际字段名
+- 记录实际单位
+- 评估是否能映射到 registry 中已有的 fact_type
+
+如果找不到真实 Excel：
+
+- D-STEP8-02 = OPEN（标记"需人工构造业务真实 fixture"）
+- 后续决策（D-STEP8-06/07/09）也保持 OPEN 直到 fixture 设计完成
+
+#### 0b. Report IR vs SystemOutput 字段级映射分析（为 D-STEP8-11 准备）
+
+逐字段比对 `04_REPORT_IR.md` 的 Report IR Schema vs `data_structures.py` 的 SystemOutput dataclass：
+
+| SystemOutput 字段                              | Report IR 对应                                          | 映射方式                             | 问题                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `report_ir: dict`                            | Report IR Document Schema（Section/Block/Inline/Table） | 直接透传                             | IR Builder 必须产出完全符合 04 的 dict                                                                      |
+| `rendered_segments: List[RenderedSegment]`   | 04 §11-18 的 Assertion/Narrative 段落                  | **需要 projection**            | Assertion → rendered_segments？Narrative → rendered_segments？AnchorDeclaration 如何从 IR anchors 转换？  |
+| `structured_tables: List[StructuredTable]`   | 04 §TableSpec                                          | **需要 projection**            | TableSpec → StructuredTable 的映射规则？TableCell.anchor_declarations 如何从 IR anchor_declarations 转换？ |
+| `system_reported_issues: List[SystemIssue]`  | 无直接对应                                              | 可能是诊断性输出                     | Step 8 可以留空或产出基本诊断                                                                               |
+| `system_evaluations: List[SystemEvaluation]` | 无直接对应                                              | 可能需要 Rule/Criterion 引擎同步产出 | Evaluation 是 Step 8 内部计算的，如何投影到 SystemEvaluation？                                              |
+
+如果发现语义断层严重（例如 IR → rendered_segments 需要大量重新解释）：
+
+- 标记 Design Conflict
+- 不得修改 04 或 data_structures.py
+- 记录问题，D-STEP8-11 = OPEN
+
+---
+
 **Step 1: Executive Decision**
 
-- 正式采纳 Candidate A：Zero-LLM M1-M3 Vertical Slice
+- 正式提议采纳 Candidate A：Zero-LLM M1-M3 Vertical Slice
 - 拒绝 B（范围过小）和 C（空壳工程）
-- 理由：唯一达成 M3 里程碑 + 唯一真实验证循环
+- 本轮不直接冻结，需 Evidence 支撑
 
-**Step 2: Decision Matrix**
+**Step 2: Decision Matrix（三态 INHERITED/CLOSED/OPEN）**
 
-- 12 个决策逐项关闭，标记 CLOSED/OPEN，记录决策内容和证据
+| Decision                                    | Status         | Decision                     | Evidence                                   |
+| ------------------------------------------- | -------------- | ---------------------------- | ------------------------------------------ |
+| D-STEP8-01 Vertical Slice Scope             | CLOSED         | ...                          | 02 §17.2 M1-M3 + Discovery §10 Scope     |
+| D-STEP8-02 Fixture Source                   | **OPEN** | 调查后决定                   | Pre-Check 0a 结果                          |
+| D-STEP8-03 RawSource → Fact Responsibility | CLOSED（结构） | Parser/Mapper/Store 三层分离 | 02 §7 §11.3；但 Mapper 确定性程度 = OPEN |
+| D-STEP8-04 Fact Store 状态机                | CLOSED         | ...                          | CDM §15 + §15.5                          |
+| D-STEP8-05 Conflict resolution              | CLOSED         | ...                          | CDM §36                                   |
+| D-STEP8-06 First Fact Types                 | **OPEN** | 依赖 fixture                 | D-STEP8-02                                 |
+| D-STEP8-07 First Compute set                | **OPEN** | 依赖 fixture                 | D-STEP8-02                                 |
+| D-STEP8-08 First Criterion operators        | INHERITED      | 直接引用 CDM §25.1          | Frozen                                     |
+| D-STEP8-09 First ConclusionRule             | **OPEN** | 依赖 fixture                 | D-STEP8-02                                 |
+| D-STEP8-10 Minimal Report IR output         | INHERITED      | 直接引用 04                  | Frozen                                     |
+| D-STEP8-11 SystemOutput projection          | **OPEN** | 字段级分析后决定             | Pre-Check 0b                               |
+| D-STEP8-12 E2E success criteria             | CLOSED         | ...                          | Discovery SC-1~SC-5 细化                   |
+
+**关键门禁条件**：READY FOR CODING 要求：
+
+- D-STEP8-02 不是 OPEN（fixture 至少明确到可以执行）
+- D-STEP8-03 的确定性程度不是 OPEN（或至少结构边界明确）
+- D-STEP8-11 不是 OPEN（或 Adapter 至少定义到能编码接口）
+- **没有未解决 Design Conflict**
+
+如果以上任何条件不满足 → STEP 8 DESIGN = NEEDS DECISION
 
 **Step 3: Frozen Scope**
 
 - In Scope：parsers/xlsx、facts/store、compute + rules + conclude、ir/builder + adapter
 - 明确排除 Pipeline Orchestrator（§8.1 结论保留为后续）
-- 冻结模块清单：`src/parsers/base.py`、`src/parsers/xlsx.py`、`src/facts/store.py`、`src/facts/conflict.py`、`src/compute/unit_registry.py`、`src/compute/calculate.py`、`src/rules/criterion.py`、`src/rules/conclude.py`、`src/ir/builder.py`、`src/ir/adapter.py`
+- 冻结模块清单（与 02 §17.2 对齐，但只列 Step 8 允许实现的）
 
-**Step 4: RawSource → Fact Responsibility（单独一节）**
+**Step 4: RawSource → Fact Responsibility（单独一节，核心问题）**
 
-- **Parser 做什么**：Excel → RawSource + CellRaw（sheet + row + col + raw_value + raw_text + position）
-- **Mapper 做什么**：CellRaw → Candidate Fact（确定性映射，不涉及语义推断）
-- **Fact Store 做什么**：Candidate → confirmed/missing/conflict（状态机）
-- **Rule 做什么**：Fact + Criterion → Evaluation + Conclusion
-- **关键决策**：Mapper 是独立层，禁止 Parser 膨胀为 Parser + Semantic Interpreter + Rule Engine
+#### 铁律（必须坚持）
 
-**Step 5: First Vertical Slice（冻结完整数据流）**
+> Parsing ≠ Semantic Interpretation
+
+#### Parser 的严格职责（不涉及任何语义推断）
+
+```text
+文件解析
+sheet / row / column 结构发现
+cell.raw_value + cell.raw_text + cell position
+原始 provenance 记录（source_refs）
+列头识别（识别，但不解释）
+```
+
+**Parser 绝对不做**：
+
+- scope_class 推断
+- fact_type 推断
+- 实例 key 推断
+- 单位判断
+- 字段同义识别
+- 任何"这个列看起来像是..."的判断
+
+#### Mapper 的推荐架构（但确定性程度需 fixture 证据）
+
+Mapper 作为独立层是推荐架构方向，但"映射是否完全确定性"必须通过第一份 Excel fixture 的真实结构验证后才能冻结。
+
+##### 需要分析的问题（Pre-Check 0a 完成后逐项回答）
+
+| #  | 问题                                                                         | 回答                | 影响                                                       |
+| -- | ---------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------- |
+| Q1 | Excel 列名是否足够稳定，可以直接匹配到 fact_type registry？                  | （待 fixture 证据） | 如果列名混乱 → 不能完全 deterministic                     |
+| Q2 | 是否需要 sheet / row / column context 才能正确映射？                         | （待 fixture 证据） | 如果需要上下文 → Mapper 更复杂                            |
+| Q3 | 是否存在同义字段（如"混凝土强度"/"抗压强度"/"砼强度"都指向同一 fact_type）？ | （待 fixture 证据） | 如果有同义 → 需要受控词表，仍然 deterministic             |
+| Q4 | 是否存在无法无歧义映射的字段？                                               | （待 fixture 证据） | 如果存在 → 记录为 Design Finding，可能需要 LLM 或人工介入 |
+| Q5 | 哪些映射属于确定性规则（列名精确匹配、受控词表匹配、位置规则）？             | （待 fixture 证据） | 这部分可以冻结为 deterministic                             |
+| Q6 | 哪些情况属于不确定性问题（需要语义理解）？                                   | （待 fixture 证据） | 这部分不能硬做，需要记录为后续工作                         |
+
+##### 三种可能结果
+
+**结果 A：全部 Q1~Q6 回答为"确定性足够"**
+
+- Mapper 可以冻结为完全确定性层
+- Candidate A 的 Zero-LLM 目标保持不变
+- D-STEP8-03 = CLOSED（结构 + 确定性）
+
+**结果 B：大部分可以确定性，但有少量需要规则增强**
+
+- Mapper 可以冻结为确定性层 + 受控同义词表 + 位置规则
+- 仍然 Zero-LLM
+- D-STEP8-03 = CLOSED（结构）+ OPEN（细节规则）
+
+**结果 C：存在无法确定性映射的字段**
+
+- 记录为 Design Finding
+- D-STEP8-03 = CLOSED（结构）+ OPEN（部分字段映射）
+- 可能需要后续引入有限 LLM 或人工介入（但这会影响 Candidate A 的 Zero-LLM 目标）
+
+#### Fact Store 的职责（继承 CDM）
+
+```text
+Candidate → confirmed / missing / conflict（状态机）
+Conflict resolution_policy = manual
+review_status 人工闸门
+```
+
+#### Rule 层的职责
+
+```text
+Fact + Criterion → Evaluation
+Evaluations + ConclusionRule → Conclusion
+```
+
+**Step 5: First Vertical Slice（数据流草案，关键接口待定）**
 
 ```
-Excel fixture
+Excel fixture（待 D-STEP8-02 确认）
  ↓
-xlsx parser
+xlsx parser（确定性，不涉及语义）
  ↓
 RawSource + CellRaw list
  ↓
-Deterministic Mapper（列名→fact_type registry 匹配）
+Mapper（确定性程度待 fixture 证据；见 Step 4 Q1-Q6）
  ↓
-Candidate Facts
+Candidate Facts（status=pending, provenance=program）
  ↓
-Fact Store 状态机
+Fact Store 状态机（CDM §15）
  ↓
-Confirmed FactSet
+Confirmed FactSet（status=filled, review_status=confirmed）
  ↓
-Compute（average / max / min）
+Compute（average / max / min — 待 fixture 确认）
  ↓
-Criterion（<= threshold 判定）
+Criterion（operator 继承 CDM §25.1）
  ↓
-Evaluation
+Evaluation（status=qualified / unqualified / not_evaluable）
  ↓
-ConclusionRule（全部合格→合格；任一不合格→不合格）
+ConclusionRule（最小聚合 — 待 fixture 确认）
  ↓
-Report IR（最小合法结构）
+Report IR（04 Schema 最小合法结构）
  ↓
-SystemOutput adapter（映射到 Step 7-E dataclass）
+SystemOutput adapter（字段级映射 — 待 D-STEP8-11 确认）
  ↓
 Step 7-E evaluate_case()
  ↓
 Step 7-F run_evaluation()
 ```
 
-**Step 6: First Fixture Contract**
+**Step 6: First Fixture Contract（D-STEP8-02 决策后填充）**
 
-- D-STEP8-02 决策：优先寻找真实 Excel；若无则人工构造业务真实 fixture
-- fixture 必须体现真实业务字段（component_id、concrete_strength、crack_width 等）
-- fixture 必须体现真实单位（MPa、mm、m、%）
-- fixture 必须有完整 provenance 链
+- fixture 来源：Pre-Check 0a 结果
+- 如果真实 Excel：记录 sheet / header / row / 字段 / 单位 / scope / fact_type 映射
+- 如果人工构造：明确标记 `synthetic_business_fixture = true`
+- 绝对不能伪装为 `historical_real_data`
 - fixture 路径：`tests/eval/fixtures/<case_id>/inputs/inspection.xlsx`
 
 **Step 7: Minimal Module Scope**
@@ -171,19 +317,6 @@ Step 7-F run_evaluation()
 - 列出每个允许实现的模块、输入、输出、关键接口
 
 **Step 8: Success Criteria（12 条 S8-S-01 ~ S8-S-12）**
-
-- S8-S-01: 真实 Excel 可被 parser 读取
-- S8-S-02: RawSource provenance 完整
-- S8-S-03: Candidate Fact 正确
-- S8-S-04: Fact Store 状态正确
-- S8-S-05: Compute 结果与独立 expected truth 一致
-- S8-S-06: Criterion Evaluation 正确
-- S8-S-07: Conclusion 正确
-- S8-S-08: IR 合法且 deterministic
-- S8-S-09: SystemOutput 可被 Step 7-E 消费
-- S8-S-10: Step 7-E 对真实 SystemOutput 成功执行
-- S8-S-11: Step 7-F Run 可记录
-- S8-S-12: 已有 Step 7-D/E/F regression 全部通过
 
 **Step 9: Out of Scope（逐条冻结）**
 
@@ -213,20 +346,13 @@ Step 7-F run_evaluation()
 
 **Step 14: Final Status**
 
-如果全部 12 个决策关闭且无 Design Conflict：
+最终 Status 判定规则：
 
-```
-STEP 8 DESIGN DISCOVERY = COMPLETE
-STEP 8 DESIGN DECISION CLOSURE = COMPLETE
-STEP 8 DESIGN STATUS = READY FOR CODING
-STEP 8 CODING = NOT STARTED
-```
-
-如果有未关闭决策：
-
-```
-STEP 8 DESIGN = NEEDS DECISION
-```
+| 条件                                                                                | Status                                 |
+| ----------------------------------------------------------------------------------- | -------------------------------------- |
+| D-STEP8-02/03(确定性)/06/07/09/11 中有任何 OPEN + 无 Design Conflict                | NEEDS DECISION                         |
+| 关键决策都不是 OPEN + 无 Design Conflict + Scope/Fixture/Boundary/Projection 都明确 | **READY FOR CODING**             |
+| 有未解决 Design Conflict                                                            | NEEDS DECISION + 列出 CONFLICT-1/2/... |
 
 ---
 
@@ -239,14 +365,14 @@ STEP 8 DESIGN = NEEDS DECISION
 3. Architecture boundary
 4. Input fixture
 5. RawSource schema
-6. Mapping responsibility
+6. Mapping responsibility（含确定性程度分析）
 7. Fact Store
 8. Conflict
 9. Compute
 10. Rules
 11. Conclusion
 12. Report IR
-13. SystemOutput adapter
+13. SystemOutput adapter（字段级映射表）
 14. E2E flow
 15. Tests
 16. Success Criteria
@@ -256,10 +382,10 @@ STEP 8 DESIGN = NEEDS DECISION
 20. Contract Deviation Rules
 21. Coding Stop Conditions
 
-状态标记：
+状态标记（严格按条件）：
 
-- 初始：**PROPOSED**
-- 决策全部关闭后：**READY FOR CODING**
+- **PROPOSED**：初始状态，决策不全
+- **READY FOR CODING**：Phase 1 全部关键决策 CLOSED，无 OPEN，无 Design Conflict
 - 禁止标记：**FROZEN**（除非有正式冻结动作和证据）
 
 ---
@@ -271,29 +397,29 @@ STEP 8 DESIGN = NEEDS DECISION
 | 依赖                            | 位置                                         | 说明                                                                              |
 | ------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------- |
 | CDM Fact + SourceRef + Conflict | `src/cdm/types.py`                         | Step 8 直接 import，不修改                                                        |
-| FactTypeRegistry                | `src/cdm/registry.py`                      | Step 8 首份 fixture 必须使用 registry 中已有的 type（或先注册新的，但这不算修改） |
+| FactTypeRegistry                | `src/cdm/registry.py`                      | Step 8 首份 fixture 必须使用 registry 中已有的 type；如需新 type 可注册但不算修改 |
 | SystemOutput dataclass          | `src/eval/accuracy/data_structures.py`     | IR adapter 必须产出此类型                                                         |
 | Step 7-E evaluate_case()        | `src/eval/accuracy/validator_framework.py` | E2E 测试入口                                                                      |
 | Step 7-F run_evaluation()       | `src/eval/run/runner.py`                   | 真实 Run 入口                                                                     |
 
-### 需要冻结的新接口
+### 需要冻结的新接口（接口定义本身不涉及确定性假设）
 
-| 接口                          | 说明                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| Parser 输出接口               | `ParseResult` = RawSource + List[CellRaw]                              |
-| Mapper 输出接口               | `List[CandidateFact]`（直接是 CDM Fact 带 status="pending"）           |
-| Fact Store 接口               | `add_candidate()` / `resolve_conflict()` / `get_confirmed_facts()` |
-| Compute 接口                  | `compute_statistics(facts, statistic_type) → computed Fact`           |
-| Criterion 引擎接口            | `evaluate(fact, criterion) → Evaluation`                              |
-| ConclusionRule 接口           | `conclude(evaluations) → Conclusion`                                  |
-| IR Builder 接口               | `build(fact_set, domain_objects, conclusion) → Report IR dict`        |
-| IR→SystemOutput Adapter 接口 | `to_system_output(report_ir, fact_set) → SystemOutput`                |
+| 接口                          | 说明                                                                     | 确定性程度                                   |
+| ----------------------------- | ------------------------------------------------------------------------ | -------------------------------------------- |
+| Parser 输出接口               | `ParseResult` = RawSource + List[CellRaw]                              | 100% 确定（Parser 是纯解析）                 |
+| Mapper 输出接口               | `List[CandidateFact]`（CDM Fact with status="pending"）                | **待 fixture 验证**（见 Step 4 Q1-Q6） |
+| Fact Store 接口               | `add_candidate()` / `resolve_conflict()` / `get_confirmed_facts()` | 100% 确定（CDM 继承）                        |
+| Compute 接口                  | `compute_statistics(facts, statistic_type) → computed Fact`           | 100% 确定（程序计算）                        |
+| Criterion 引擎接口            | `evaluate(fact, criterion) → Evaluation`                              | 100% 确定（CDM 继承）                        |
+| ConclusionRule 接口           | `conclude(evaluations) → Conclusion`                                  | 待 fixture 确认聚合逻辑                      |
+| IR Builder 接口               | `build(fact_set, domain_objects, conclusion) → Report IR dict`        | **待 D-STEP8-11 字段级分析**           |
+| IR→SystemOutput Adapter 接口 | `to_system_output(report_ir, fact_set) → SystemOutput`                | **待 D-STEP8-11 字段级分析**           |
 
 ### Unit 系统
 
 - 沿用 CDM 的 `value + unit + quantity_kind` 三元组
 - 单位换算只在 Compute 层发生
-- 首份 fixture 涉及的单位：MPa、mm、m
+- 首份 fixture 涉及的单位：**待 fixture 确认**
 
 ### Design Conflict 检查
 
@@ -302,93 +428,95 @@ STEP 8 DESIGN = NEEDS DECISION
 1. CDM 无法覆盖某个 Step 8 需要的 Fact 模式 → D-045 决策
 2. Report IR 无法表达某个 Step 8 需要的结构 → D-046 决策
 3. Step 7-E 7 条 P0 有 Schema 空洞 → 登记但不静默修复
+4. Report IR → SystemOutput 存在无法无损衔接的语义断层 → CONFLICT-X
 
-遇到任何 Conflict：标记 OPEN 状态，Step 8 DESIGN = NEEDS DECISION
+遇到任何 Conflict：标记 Conflict 状态，Step 8 DESIGN = NEEDS DECISION
 
 ---
 
 ## Validation
 
+### 证据收集完整性验证
+
+| 验证项                       | 方法                                |
+| ---------------------------- | ----------------------------------- |
+| Pre-Check 0a 真实 Excel 检查 | Glob 全 workspace                   |
+| Pre-Check 0b 字段级映射分析  | 逐字段对比 04 vs data_structures.py |
+| Step 4 Q1-Q6 全部回答        | Checklist 逐项填充                  |
+
 ### 文档完整性验证
 
-| 验证项                               | 方法                                        |
-| ------------------------------------ | ------------------------------------------- |
-| Decision Closure 14 节完整           | Checklist 逐项标记完成                      |
-| Coding Contract 21 节完整            | Checklist 逐项标记完成                      |
-| 12 个决策全部关闭（或明确标记 OPEN） | Decision Matrix 逐项检查                    |
-| Design Conflict 登记                 | 如有 Conflict 必须有 Decision Register 条目 |
-| Out of Scope 15 条完整               | OOS 表格逐项确认                            |
+| 验证项                                     | 方法                                        |
+| ------------------------------------------ | ------------------------------------------- |
+| Decision Closure 14 节完整                 | Checklist 逐项标记完成                      |
+| Coding Contract 21 节完整                  | Checklist 逐项标记完成                      |
+| 12 个决策都有状态（INHERITED/CLOSED/OPEN） | Decision Matrix 逐项检查                    |
+| Design Conflict 登记                       | 如有 Conflict 必须有 Decision Register 条目 |
+| Out of Scope 15 条完整                     | OOS 表格逐项确认                            |
 
 ### 架构一致性验证
 
-| 验证项                                                           | 方法                                      |
-| ---------------------------------------------------------------- | ----------------------------------------- |
-| Candidate A 符合架构铁律 M3                                      | 阅读 02 §17.2                            |
-| Parser/Mapper/Store 边界符合"Parsing ≠ Semantic Interpretation" | 对照 §五原则                             |
-| 不修改 Frozen docs                                               | Grep 搜索 docs/02~05/07 是否有修改        |
-| 复用 CDM Fact schema 不发明第二套                                | 对照 src/cdm/types.py                     |
-| 复用 SystemOutput dataclass                                      | 对照 src/eval/accuracy/data_structures.py |
-| Conflict resolution_policy = manual                              | 对照 CDM §36                             |
+| 验证项                              | 方法                                      |
+| ----------------------------------- | ----------------------------------------- |
+| Candidate A 符合架构铁律 M3         | 阅读 02 §17.2                            |
+| Parsing ≠ Semantic Interpretation  | 对照 Step 4 Q1-Q6 + 02 §11.3             |
+| 不修改 Frozen docs                  | Grep 搜索 docs/02~05/07 是否有修改        |
+| 复用 CDM Fact schema 不发明第二套   | 对照 src/cdm/types.py                     |
+| 复用 SystemOutput dataclass         | 对照 src/eval/accuracy/data_structures.py |
+| Conflict resolution_policy = manual | 对照 CDM §36                             |
 
-### Success Criteria 可行性验证
+### READY FOR CODING 门禁
 
-| SC                                | 可行性                   | 验证方式                     |
-| --------------------------------- | ------------------------ | ---------------------------- |
-| S8-S-01 真实 Excel 可读取         | ✅ 可行（openpyxl 成熟） | 端到端测试                   |
-| S8-S-02 provenance 完整           | ✅ 可行                  | 每个 Fact 带 source_refs     |
-| S8-S-03 Candidate Fact 正确       | ✅ 可行                  | 单元测试                     |
-| S8-S-04 Fact Store 状态正确       | ✅ 可行                  | 状态机单元测试               |
-| S8-S-05 Compute 结果一致          | ✅ 可行                  | 独立计算 expected truth      |
-| S8-S-06 Criterion Evaluation 正确 | ✅ 可行                  | 单元测试                     |
-| S8-S-07 Conclusion 正确           | ✅ 可行                  | 单元测试                     |
-| S8-S-08 IR 合法且 deterministic   | ✅ 可行                  | Schema 校验器 + 重复运行一致 |
-| S8-S-09 SystemOutput 可消费       | ✅ 可行                  | 类型检查                     |
-| S8-S-10 Step 7-E 成功执行         | ✅ 可行                  | 端到端测试                   |
-| S8-S-11 Step 7-F Run 可记录       | ✅ 可行                  | runner 接口                  |
-| S8-S-12 regression 通过           | ✅ 可行                  | pytest 全量回归              |
+| 门禁                     | 条件                                 |
+| ------------------------ | ------------------------------------ |
+| 关键决策非 OPEN          | D-STEP8-02/03(确定性)/11 都不是 OPEN |
+| 无 Design Conflict       | CONFLICT-X 列表为空                  |
+| Scope 已明确             | D-STEP8-01 CLOSED + OOS 完整         |
+| Fixture 至少明确到可执行 | D-STEP8-02 有具体来源/设计           |
+| 责任边界已明确           | Parsing/Mapping/Store 三层           |
+| Projection 已明确        | IR → SystemOutput 字段级映射        |
 
 ---
 
 ## Risks
 
-| 风险                                        | 概率   | 影响                  | 缓解                         |
-| ------------------------------------------- | ------ | --------------------- | ---------------------------- |
-| **真实 Excel fixture 不可得**         | MEDIUM | D-STEP8-02 需重新决策 | 允许人工构造业务真实 fixture |
-| **CDM Schema 边界空洞**               | MEDIUM | 需 D-045 决策         | 发现即登记，不静默修复       |
-| **Report IR Schema 边界空洞**         | LOW    | 需 D-046 决策         | 发现即登记，不静默修复       |
-| **Step 7-E P0 Schema 空洞**           | LOW    | 登记但不修 Step 7-E   | 设计发现→登记→后续决策     |
-| **Scope Creep 忍不住加 Pipeline/LLM** | HIGH   | 违反 OOS              | 严格对照 OOS 列表            |
+| 风险                                         | 概率   | 影响                                | 缓解                                          |
+| -------------------------------------------- | ------ | ----------------------------------- | --------------------------------------------- |
+| **真实 Excel fixture 不可得**          | MEDIUM | D-STEP8-02 = OPEN                   | 允许人工构造 business fixture，但必须明确标记 |
+| **Mapper 无法完全确定性**              | MEDIUM | Candidate A Zero-LLM 目标可能需调整 | 如实记录 Design Finding，不强行               |
+| **CDM Schema 边界空洞**                | MEDIUM | 需 D-045 决策                       | 发现即登记，不静默修复                        |
+| **Report IR → SystemOutput 语义断层** | MEDIUM | D-STEP8-11 = OPEN                   | 字段级分析后如实记录；不修改 Frozen docs      |
+| **Scope Creep 忍不住加 Pipeline/LLM**  | HIGH   | 违反 OOS                            | 严格对照 OOS 列表                             |
 
 ---
 
 ## Exit Criteria
 
-### 成功出口
+### READY FOR CODING 出口（严格满足全部）
 
 ```
-docs/Step_8_Design_Decision_Closure.md 存在且完整（14 节全部关闭）
+docs/Step_8_Design_Decision_Closure.md 存在且完整（14 节）
 docs/Step_8_Coding_Contract_v1.md 存在且完整（21 节，状态 = READY FOR CODING）
-12 个 D-STEP8 决策全部 CLOSED
-无未解决 Design Conflict
+关键决策（D-STEP8-02/03/11）都不是 OPEN
+无 Design Conflict
 不修改任何 Frozen docs
 不创建任何生产代码
 ```
 
-### 失败出口
+### NEEDS DECISION 出口
 
 ```
-存在关键 Decision OPEN
-存在未解决 Design Conflict
-发现 Frozen doc 必须修改才能继续
+存在任何关键 Decision OPEN（D-STEP8-02/03 确定性程度/11）
+存在未解决 Design Conflict（CONFLICT-X）
 → STEP 8 DESIGN = NEEDS DECISION
-→ 列出 OPEN-1 / OPEN-2 / ...
+→ 列出 OPEN-1 / OPEN-2 / ... 和 CONFLICT-1 / CONFLICT-2 / ...
 ```
 
 ### 明确不算完成
 
 ```
-只写出 Scope 不写 Decision
-只写 Contract 不关闭决策
-为了"推进"强行关闭有缺口的决策
+为了"推进"强行关闭有缺口的决策（标记 OPEN 为 CLOSED）
+Mapper 没有 fixture 证据就假定完全确定性
+D-STEP8-11 没有字段级分析就假定 IR→SystemOutput 可以直接衔接
 静默修改 Frozen docs
 ```
