@@ -222,8 +222,8 @@ class ParseResult:
 ### Mapper 做什么（结构已冻结，确定性程度 OPEN）
 
 - **输入**：ParseResult（CellRaw list + header row 识别）
-- **输出**：List[CandidateFact]（CDM Fact dataclass with `status="pending"`, `provenance="program"`, `method="quoted"`）
-- **职责**：把 CellRaw 映射到 CandidateFact，设置 fact_id / fact_type / value / unit / source_refs
+- **输出**：List[CandidateFact]（**瞬态桥接对象**，携带 fact_id / fact_type / value / unit / source_refs / method / provenance，但**不带合法 Fact.status**；不得伪装成 CDM Fact dataclass）
+- **职责**：把 CellRaw 映射到 CandidateFact，设置 fact_id / fact_type / value / unit / source_refs。入库即成为合法 Fact（`status=filled, review_status=pending`，见 types.py 默认构造）
 
 ### Mapper 确定性程度（OPEN — 需 fixture 验证 Q1-Q6）
 
@@ -254,13 +254,17 @@ CDM v0.3.1 已定义 Fact（`src/cdm/types.py`）和 FactTypeRegistry（`src/cdm
 
 ```python
 class FactStore:
-    """Fact 状态机（继承 CDM §15）。"""
+    """Fact 状态机（严格继承 CDM §15，禁止发明非法 status）。"""
 
     def __init__(self, registry: FactTypeRegistry):
         ...
 
-    def add_candidates(self, candidates: List[Fact]) -> None:
-        """添加 candidate facts（status 必须为 pending）。"""
+    def ingest_candidates(self, candidates: List[CandidateFact]) -> None:
+        """瞬态 CandidateFact → 合法 Fact(status=filled, review_status=pending) 入库。
+        
+        CandidateFact 是 Mapper 产出的瞬态桥接对象（非 CDM Fact dataclass，不带 status）。
+        入库时使用 types.py 默认构造：status=filled, review_status=pending。
+        """
 
     def get_confirmed_facts(self) -> List[Fact]:
         """返回 status=filled + review_status=confirmed 的 facts。"""
@@ -272,26 +276,42 @@ class FactStore:
         """返回所有未解决的 conflicts。"""
 
     def mark_missing(self, fact_id: str) -> None:
-        """标记为 missing（value=None）。"""
+        """标记为 missing（Fact.status=missing, value=None）。"""
 
     def mark_conflict(self, fact_id: str, candidates: List[ConflictCandidate]) -> None:
         """标记为 conflict + 记录候选值。"""
 
     def mark_rejected(self, fact_id: str, reason: str) -> None:
-        """标记为 rejected。"""
+        """标记为 Fact.status=rejected。"""
 ```
 
-### 状态转换（继承 CDM §15）
+### 状态转换（严格继承 CDM §15，禁止非法 status）
 
 ```
-Candidate(pending) → confirmed(filled, review_status=confirmed)
-                  → missing(status=missing, value=null)
-                  → conflict(status=conflict, candidates=[...], resolution_policy=manual)
-                  → rejected(status=rejected, review_status=rejected)
+CellRaw → Mapper → CandidateFact（transient，非 CDM Fact）
+                         ↓
+                   Fact Store ingestion
+                         ↓
+                Fact(status=filled, review_status=pending)   ← types.py 默认构造
+                         ↓ Store 闸门
+           ┌─────────────┼──────────────┬───────────────┐
+           ↓             ↓              ↓               ↓
+     confirmed       missing         conflict        rejected
+  (review_status   (value=null)     (candidates)     (status=rejected)
+   =confirmed)                     (resolution
+                                   _policy=manual)
 
-Conflict resolved(manual) → confirmed(选定值) → superseded(旧值)
+Conflict manual resolution → resolve_conflict(conflict_id, value, resolver_id)
+  → 选定值成为新 Fact(status=filled, review_status=confirmed, revision=N)
+  → 旧候选 Facts 转 superseded（revision 更正链）
+
 Revision 更正 → supersedes 链（CDM §15.5）
 ```
+
+**关键禁令（本次 Session 修正）：**
+- `pending` 是 `review_status` 的合法值，**绝不是** `Fact.status` 的合法值（registry.py FACT_STATUSES）
+- `resolved` **不存在**于 Fact.status 枚举；Conflict 解决产生的是新的 `filled` Fact + 旧 Facts 转 `superseded`
+- CandidateFact 是 Mapper→Store 之间的瞬态桥接对象，不得伪装成带非法 status 的 CDM Fact
 
 ### 不变量
 
@@ -521,12 +541,17 @@ IR Materialization 把 IR 的结构化表示（Ref / Lit / Table cell）转换�
 | `system_reported_issues: List[SystemIssue]` | 无直接对应 | 诊断性输出；Step 8 可以产出 missing/conflict facts 的基本诊断 |
 | `system_evaluations: List[SystemEvaluation]` | 无直接对应 | Rule 引擎同步产出；每个 Evaluation → SystemEvaluation |
 
-### 精度规则
+### 精度规则（fixture-specific display policy）
 
-Step 8 无 TemplateSpec（OOS-13），使用默认精度：
-- fact.value 是 float → 保留原始 Python 精度
+Step 8 无 TemplateSpec（OOS-13），使用 **fixture-specific display policy**——临时、确定性、**仅属于本 Vertical Slice**：
+- fact.value 是 float → 保留原始 Python 精度（如 32.4 → "32.4"）
 - fact.value 是 int → 整数显示
 - 单位 = fact.unit（不强制转换）
+
+**关键声明（本次 Session 修正）：**
+- 此规则 **不宣称是最终 TemplateSpec 规则**
+- 正式显示规格的唯一真相源是 04_REPORT_IR.md §17 定义的 `TemplateSpec.fact_display_spec`（OOS-13，M4 负责）
+- P0 anchor validation 使用与本 fixture display policy 一致的确定性规则，保证渲染值与 Fact 值可精确比对
 
 ### AnchorDeclaration 生成规则
 
@@ -549,9 +574,9 @@ synthetic_business_fixture.xlsx（待 D-STEP8-02）
  ↓ parse_xlsx()
 RawSource + List[CellRaw]
  ↓ map_cells_to_candidates()（Mapper 确定性程度待 D-STEP8-03 Q1-Q6）
-List[CandidateFact]（CDM Fact with status="pending", provenance="program"）
- ↓ FactStore.add_candidates()
-FactStore（confirmed / missing / conflict）
+List[CandidateFact]（**瞬态桥接对象**，携带 fact_id/fact_type/value/unit/source_refs，但不带合法 Fact.status）
+ ↓ FactStore ingestion
+FactStore（Fact(status=filled, review_status=pending) → 闸门 → confirmed / missing / conflict）
  ↓ FactStore.get_confirmed_facts()
 List[Fact]
  ↓ compute_statistics()（待 D-STEP8-07）

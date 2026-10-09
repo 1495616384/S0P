@@ -47,7 +47,7 @@ Candidate A 的目标方向保持不变，但需要 Step 8 Coding Round 前补�
 | D-STEP8-01 Vertical Slice Scope | **CLOSED** | Step 8 = M1(parsers/xlsx + facts/store) + M2(compute + rules + conclude) + M3(ir/builder + ir/adapter)，但只做**一个最小真实 Excel 业务案例**的完整贯通 | 02 §17.2 + Discovery §10 + OOS 完整排除了 Pipeline/LLM/Template |
 | D-STEP8-02 Fixture Source | **OPEN** | workspace 中无任何真实 Excel/CSV 文件（Pre-Check 0a Glob 确认）。**需要人工构造 business fixture**，但 fixture 设计（sheet/header/字段/单位/fact_type 映射）尚待完成 | Pre-Check 0a：Glob `g:\workspace\zixun4\**\*.xlsx` → 0 个文件 |
 | D-STEP8-03 RawSource → Fact Responsibility | **CLOSED（结构）+ OPEN（确定性程度）** | Parser/Mapper/Store 三层分离结构已明确（Parsing ≠ Semantic Interpretation 铁律）。但 Mapper 是否能完全确定性（Q1-Q6）无法在没有真实 fixture 的情况下证据化 | Pre-Check 0a 无 fixture；Pre-Check 0b 确认 Adapter 部分可确定性；§四 Q1-Q6 需 fixture 验证 |
-| D-STEP8-04 Fact Store 状态机 | **CLOSED** | FactStore 状态机继承 CDM §15：candidate(pending) → confirmed/filled / missing / conflict → resolved → superseded；Conflict resolution_policy = manual | CDM §15 + §15.5 revision 链 |
+| D-STEP8-04 Fact Store 状态机 | **CLOSED** | FactStore 状态机严格继承 CDM §15，**禁止发明非法 status**：CandidateFact（transient，非 CDM Fact）→ 入库后立即成为 `status=filled, review_status=pending` 的合法 Fact → 经 Store 闸门可转入 confirmed / missing / conflict / rejected / superseded；Conflict resolution_policy = manual；**不存在 `pending` 或 `resolved` 作为 Fact.status**（见 registry.py FACT_STATUSES） | CDM §15 + §15.5 revision 链 + registry.py FACT_STATUSES + types.py Fact 默认值 |
 | D-STEP8-05 Conflict resolution | **CLOSED** | 第一阶段必须 manual；Store 接口：`resolve_conflict(conflict_id, resolution_value, resolver_id)`；不实现自动裁决 | CDM §36 + project_memory hard constraint |
 | D-STEP8-06 First Fact Types | **OPEN** | 依赖 fixture 字段。registry 已注册 15+ 类型（component.concrete_strength、defect.width 等），但 fixture 实际用哪些尚待 fixture 设计 | D-STEP8-02 |
 | D-STEP8-07 First Compute set | **OPEN** | 依赖 fixture 的数据类型。预候选：average / max / min（统计量）；但需确认 fixture 是否有一组同类型数据需要聚合 | D-STEP8-02 |
@@ -102,7 +102,7 @@ OPEN:         6  (D-STEP8-02, D-STEP8-03 确定性程度, D-STEP8-06, D-STEP8-07
 | OOS-10 | Multi-Agent / RAG / 向量数据库 / 知识图谱 / 微服务 / K8s / MQ | 过度工程化 |
 | OOS-11 | 自动 Conflict 解决策略 | hard constraint |
 | OOS-12 | 任何 Narrative 段落生成（需 LLM） | M9 内容；依赖 M8 |
-| OOS-13 | TemplateSpec / fact_display_spec | 属于 M4 Template Parser 产出，Step 8 的 IR Materialization 使用默认精度（如无 TemplateSpec，用 CDM Fact 的原始单位 + 自然精度） |
+| OOS-13 | TemplateSpec / fact_display_spec | 属于 M4 Template Parser 产出；Step 8 的 IR Materialization 使用 **fixture-specific display policy**（临时、非系统级规则），不宣称是最终 TemplateSpec 规则 |
 | OOS-14 | Report IR Narrative 段生成 | Step 8 零 LLM；首份 Vertical Slice 只用 Assertion 段 + Table，不用 Narrative |
 | OOS-15 | Ground Truth / expected_issues 设计 | 属于 Evaluation Case 设计（Step 6 已冻结），Step 8 只实现生成侧 |
 
@@ -169,16 +169,33 @@ Mapper 作为独立层是推荐架构方向——这是 Parsing ≠ Semantic Int
 - D-STEP8-03 = CLOSED（结构）+ OPEN（部分字段映射）
 - **影响 Candidate A 的 Zero-LLM 目标**——可能需要 Step 8.5 引入有限 LLM 或人工介入层
 
-### Fact Store 的职责（继承 CDM）
+### Fact Store 的职责（严格继承 CDM，禁止非法 status）
 
 ```text
-Candidate(pending) → confirmed(filled, review_status=confirmed)
-                   → missing(status=missing, value=null)
-                   → conflict(status=conflict, candidates=[...], resolution_policy=manual)
-                   → rejected(status=rejected, review_status=rejected)
-Conflict 解决（manual）→ resolve_conflict(conflict_id, resolution_value, resolver_id)
+CellRaw → Mapper → CandidateFact（transient，非 CDM Fact，不带合法 status）
+                          ↓
+                    Fact Store ingestion
+                          ↓
+                   Fact(status=filled, review_status=pending)   ← types.py 默认构造
+                          ↓ Store 闸门
+              ┌───────────┼────────────┬─────────────┐
+              ↓           ↓            ↓             ↓
+      confirmed      missing       conflict     rejected
+   (review_status   (value=null)   (candidates)  (status=rejected)
+    =confirmed)                     (resolution
+                                    _policy=manual)
+                                    
+Conflict manual resolution → resolve_conflict(conflict_id, value, resolver_id)
+  → 选定值成为新 Fact(status=filled, review_status=confirmed, revision=N)
+  → 旧候选 Facts 转 superseded（revision 更正链）
+
 Revision 更正 → supersedes 链（CDM §15.5）
 ```
+
+**关键禁令（本次 Session 修正）：**
+- `pending` 是 `review_status` 的合法值，**绝不是** `Fact.status` 的合法值（registry.py FACT_STATUSES）
+- `resolved` **不存在**于 Fact.status 枚举；Conflict 解决产生的是新的 `filled` Fact + 旧 Facts 转 `superseded`
+- CandidateFact 是 Mapper→Store 之间的**瞬态桥接对象**，不得伪装成带非法 status 的 CDM Fact
 
 ### Rule 层的职责
 
@@ -201,9 +218,13 @@ RawSource + List[CellRaw]（每个 cell 有 sheet/row/col/raw_value/raw_text/pos
  ↓
 Mapper（确定性程度待 fixture 验证；见 §四 Q1-Q6）
  ↓
-List[CandidateFact]（CDM Fact dataclass with status="pending", provenance="program"）
+List[CandidateFact]（**瞬态桥接对象**，携带 fact_id/fact_type/value/unit/source_refs，但**不带合法 status**；不得伪装成 CDM Fact）
  ↓
-Fact Store 状态机（CDM §15）
+Fact Store ingestion（transient → 合法 Fact）
+ ↓
+List[Fact](status=filled, review_status=pending)   ← 入库即用 types.py 默认构造
+ ↓
+Fact Store 闸门（review_status 人工确认 / missing 标记 / conflict 识别）
  ↓
 Confirmed FactSet（status=filled, review_status=confirmed）
  ↓
@@ -240,7 +261,7 @@ IR Materialization 是 Step 8 Adapter 必须承担的确定性投影工作——
 | 产出 SystemOutput dataclass | 产出 DOCX 文件 |
 | **Step 8 In Scope** | **OOS（M4）** |
 
-精度规则：Step 8 无 TemplateSpec（OOS-13），使用默认精度——从 Fact.value 的 Python 精度推导（如 32.4 → 1 位小数）。这是确定性的，不涉及 LLM。
+精度规则：Step 8 无 TemplateSpec（OOS-13），使用 **fixture-specific display policy**——从 Fact.value 的 Python 精度推导（如 32.4 → 1 位小数）。这是 Step 8 Vertical Slice 的**临时确定性规则**，**不宣称是最终 TemplateSpec 规则**；正式显示规格的唯一真相源是 04_REPORT_IR.md §17 定义的 `TemplateSpec.fact_display_spec`（OOS-13）。P0 anchor validation 使用与本 fixture display policy 一致的确定性规则。
 
 ---
 
@@ -283,7 +304,7 @@ workspace 中无真实 Excel 文件（Pre-Check 0a Glob 确认），无法使用
 |---|---|---|---|---|
 | `src/parsers/base.py` | 无（Schema 定义） | CellRaw dataclass | `CellRaw(sheet, row, col, raw_value, raw_text, position)` | 100% |
 | `src/parsers/xlsx.py` | xlsx 文件路径 | ParseResult(RawSource, List[CellRaw]) | `parse_xlsx(path) → ParseResult` | 100% |
-| `src/facts/store.py` | List[CandidateFact] | FactStore(confirmed, missing, conflict, rejected) | `add_candidates()`, `get_confirmed_facts()`, `get_conflicts()`, `resolve_conflict()` | 100%（CDM 继承） |
+| `src/facts/store.py` | List[CandidateFact] | FactStore(confirmed, missing, conflict, rejected) | `ingest_candidates()`, `get_confirmed_facts()`, `get_conflicts()`, `resolve_conflict()` | 100%（CDM 继承） |
 | `src/facts/conflict.py` | Conflict 对象 | 人工决策结果 | `resolve(conflict_id, decision, resolver_id)` | 100%（manual） |
 | `src/compute/unit_registry.py` | 无（Registry 定义） | Unit → quantity_kind 映射 | `get_quantity_kind(unit)` | 100%（deterministic） |
 | `src/compute/calculate.py` | List[Fact], statistic_type | computed Fact | `compute(facts, "avg"/"max"/"min") → Fact` | 100% |
@@ -358,6 +379,14 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 | R4 | **Report IR → SystemOutput 语义断层** | **LOW** | 已证伪——IR Materialization 可确定性承担 | Pre-Check 0b 确认 Adapter 可确定性投影 |
 | R5 | **Scope Creep（忍不住加 Pipeline/LLM）** | **HIGH** | 违反 OOS；延迟交付 | 严格对照 OOS 15 条；每写一个模块前确认 |
 | R6 | **Fixture 设计引入不在 registry 的 fact_type** | MEDIUM | 需要先扩展 registry 才能注册 | D-STEP8-06 必须检查 registry 覆盖；如缺类型 → 先扩展 registry 不算修改 CDM Schema |
+
+---
+
+## 10.1 Design Conflict Registry（本次 Session 新增）
+
+| ID | 发现 | 影响范围 | 处理 |
+|---|---|---|---|
+| **D-CONFLICT-001** | CDM 已注册的 `component.concrete_strength` 假设一个 component 有一个值，但 GB/T 50081-2019 要求每构件 3 个平行试块 → 当前 CDM 缺少 component→sample 层级表达 | Fixture 设计、Mapper、Compute | 暂定 **P1 路径**（每个试块 = 独立 sample Fact，registry +1 `sample.concrete_strength`）；明确不静默采用 P2 或 P3；完整层级表达缺口留待 D-045 决策 |
 
 ---
 
