@@ -1,0 +1,823 @@
+好的，我收到明确指令：这是 **Step 8 Pre-Coding Design Repair**，只修改设计产物，不写生产代码。
+
+让我先定位 Step 8 相关文档的位置，同时读取 Frozen CDM 和 Frozen Report IR，作为修正的基准。
+好的，用户明确要求：
+
+1. 不进入 Fixture Design，不写生产代码
+2. 执行 Step 8 Pre-Coding Design Repair
+3. 修正 Fact.status/review_status 语义
+4. 禁止 resolved 作为 Fact.status
+5. 修正 Fixture Brief 内部矛盾
+6. 收缩第一版混凝土业务规则
+7. 重新确认 component.id / component.component_id
+8. 收缩 Step 8 display policy
+9. 保持已有正确边界
+10. 输出要求
+
+首先我需要找到这些 Step 8 的设计文档在哪里，先理解项目结构，然后读取相关文件，才能进行设计修正。
+
+让我先探索一下项目结构。
+
+好，文件定位完成。现在并行读取 **Frozen CDM**、**Frozen Report IR** 作为修正基准，同时读取三个 Step 8 设计文档。
+好，找到了所有文件。让我并行读取：
+1. Frozen CDM (03_CANONICAL_DATA_MODEL.md) - 必须严格遵守
+2. Frozen Report IR (04_REPORT_IR.md) - 必须严格遵守
+3. 三个 Step 8 设计文档 - 需要修正的对象
+
+先读取这些文件，才能开始修正。
+
+好，现在我已经完整读取了：
+- **Frozen CDM v0.3.1**（基准）
+- **Frozen Report IR v0.3.1.1**（基准）
+- **三个 Step 8 设计文档**（需要修正的对象）
+
+让我先调用 AdvisorTool 获取战略指导，再进入编辑。
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+Advisor 指导很关键。在编辑前，我必须先确认 `src/cdm/registry.py` 里实际注册了哪些 fact_type（Issue #5 依赖此），以及 `src/cdm/types.py` 里 Fact dataclass 的字段定义。
+好，现在我已经读完了所有需要的文件。让我把用户提的 8 个修正点逐一对照，先做一次系统性分析，然后调用 AdvisorTool 再进入编辑。
+
+让我逐条分析：
+
+### 1. 修正 Fact.status / review_status 语义
+
+**Frozen CDM §15** 明确：
+```
+Fact.status = filled / missing / conflict / rejected / superseded
+Fact.review_status = pending / confirmed / rejected
+```
+
+**问题在 Step_8_Design_Decision_Closure.md §5 (line 205) 和 Step_8_Coding_Contract_v1.md §7 (line 287-294)**：
+
+```
+CandidateFact（CDM Fact dataclass with status="pending", provenance="program"）
+Candidate(pending) → confirmed(filled, review_status=confirmed)
+```
+
+这是错误！`pending` 不是合法的 `Fact.status` 值。它只能是 `review_status` 的值。
+
+还有 Decision Closure §2 D-STEP8-04 里写的：
+```
+candidate(pending) → confirmed/filled / missing / conflict → resolved → superseded
+```
+`resolved` 也不在合法 status 里！
+
+还有 Coding Contract §7 状态转换图：
+```
+Candidate(pending) → confirmed(filled, review_status=confirmed)
+Conflict resolved(manual) → confirmed(选定值) → superseded(旧值)
+```
+同样有 `pending` 作为 status 和 `resolved` 作为 status 的问题。
+
+**需要修正的核心**：
+- `CandidateFact` 如果保留，必须明确它是 Mapper→Fact Store 的瞬态候选对象，不是合法 CDM Fact 的 status
+- 正式进入 CDM Fact Store 后，初始应使用合法的 `status`（`filled`）和 `review_status`（`pending`）
+- 状态转换应该是：
+  ```
+  CellRaw → CandidateFact（transient，非法 CDM Fact status）
+  → Fact Store ingestion
+  → Fact(status=filled, review_status=pending)
+  → confirmed / missing / conflict / rejected / superseded
+  ```
+
+### 2. 禁止 resolved 作为 Fact.status
+
+上面已经发现了。CDM §15 没有 `resolved`。用户明确说 `resolve_conflict()` 可以保留为动作接口，但 `resolved` 不能成为新的持久化 Fact.status。
+
+**Conflict resolution 后的状态转换应该是**：
+```
+Conflict(facts with status=conflict)
+→ Manual resolution via resolve_conflict()
+→ Selected value → Fact(status=filled, review_status=confirmed, revision=N)
+→ Old conflict candidates → Fact(status=superseded, revision=N-1)
+```
+
+### 3. Fixture Brief 内部矛盾
+
+Fixture Design Sprint §5 说「3-5 个构件（10-15 个试块）」和 §6 说「至少 10 个数据行」，同时 §9 说「3 个构件 × 3 个试块 = 9 行数据」。
+
+用户要求统一为 **4 components × 3 measurements = 12 rows**。
+
+### 4. 收缩第一版混凝土业务规则
+
+当前 Fixture Brief §4 里写了：
+```
+IF 平均值 ≥ 30 MPa AND 所有单个值 ≥ 0.88 × 30 (= 26.4 MPa)
+→ Conclusion.status = "qualified"
+```
+
+这引入了：
+- 0.88 倍规则（复杂规范）
+- 多个判定条件（不是最小的）
+
+用户要求第一版用**最小、明确、可独立验证的 Criterion**，例如：
+```
+concrete_strength >= design_strength
+```
+
+不能提前冻结 GB/T 50081-2019 的复杂规则。业务背景和实际判定规则必须分开。
+
+### 5. component.id vs component.component_id
+
+**Frozen CDM §8.1** 用的是：
+```
+fact:component.K001.concrete_strength
+```
+
+**Frozen Report IR §13 示例**用的是：
+```
+fact:component.K001.id
+```
+
+但 Fixture Design Sprint §2 里写了：
+```
+component.component_id | component | 构件编号（scope_key） | 必选
+```
+
+这引入了一个新的 fact_type `component.component_id`，而 Frozen Report IR 示例里用的是 `component.id`。
+
+我需要检查一下 registry 里到底注册了什么。让我看看项目里的 registry...不过当前我先标记这个矛盾。
+
+另外还有 `test_block_id` 的问题——用户质疑第一版是否真的需要。当前方案 B（试块为行）里每行有一个试块，那 `test_block_id` 进入 CDM 就意味着需要新的 fact_type，而且这个层级关系（一个 component 对多个 test_block）是否超出 Step 8 最小范围。
+
+### 6. 收缩 Step 8 display policy
+
+Decision Closure §5 和 Coding Contract §13 都写了：
+```
+精度规则：Step 8 无 TemplateSpec（OOS-13），使用默认精度——从 Fact.value 的 Python 精度推导（如 32.4 → 1 位小数）。
+```
+
+用户说不要把这种 heuristic 冻结成系统级架构规则。Frozen 04 §17 已明确 `TemplateSpec.fact_display_spec` 是正式显示规格来源。
+
+Step 8 可以用 fixture-specific 的临时机制，但必须明确：
+- 只属于 Step 8 Vertical Slice
+- 不修改 04
+- 不宣称是最终 TemplateSpec 规则
+- P0 anchor validation 用与 fixture display policy 一致的确定性规则
+
+### 7. 保持已有正确边界
+
+这个基本都在，只是要确保修正过程中不破坏。
+
+### 8. 关于 D-STEP8-02/03/06/07/09 是否仍 OPEN
+
+用户要求完成后重新逐项列出这几个。
+
+好，现在让我先调用 AdvisorTool 获取战略指导，再开始编辑。因为有 8 个设计问题需要修正，影响三个设计文档，我需要先确认修正策略的整体方向。
+正在请求专家建议........
+
+已获取专家建议
+
+Advisor 说得对，我需要先读 registry.py 和 types.py 来确认 Issue #5（component.id vs component.component_id）到底是怎么注册的。让我并行读取这两个文件。
+
+好，找到了。让我并行读取 registry.py 和 types.py。
+
+完美。**registry.py 和 types.py 的证据链已完全闭合**：
+
+| 发现 | 证据 | 严重程度 |
+|---|---|---|
+| `pending` 不是合法 Fact.status | registry.py L43-49 只有 filled/missing/conflict/rejected/superseded | **致命** |
+| `resolved` 不是合法 Fact.status | 同上，CDM §15 也没有 | **致命** |
+| `component.id` 才是注册类型 | registry.py L276-277 注册的是 `component.id`，**没有** `component.component_id` | **致命** |
+| `component.test_block_id` / `component.test_date` 未注册 | registry 里不存在这两个 fact_type | 中等 |
+| Fact 默认构造就是 `status="filled", review_status="pending"` | types.py L222 + L219 | 正面证据 |
+
+现在创建 TODO 跟踪 3 个文件的修正，然后从**权威文档 Design Decision Closure** 开始修起。
+太好了！现在全部证据链完整了。让我汇总一下发现的所有需要修正的问题：
+
+### Issue #1 & #2 确认：`pending` 不是合法 Fact.status，`resolved` 不是合法 Fact.status
+
+**registry.py 行 43-49**:
+```python
+FACT_STATUSES: frozenset[str] = frozenset({
+    "filled",
+    "missing",
+    "conflict",
+    "rejected",
+    "superseded",
+})
+```
+
+只有这 5 个。`pending` 不在里面，`resolved` 也不在里面。
+
+**registry.py 行 52-56**:
+```python
+REVIEW_STATUSES: frozenset[str] = frozenset({
+    "pending",
+    "confirmed",
+    "rejected",
+})
+```
+
+`pending` 是 `review_status` 的值，不是 `status` 的。
+
+**types.py 行 222**:
+```python
+status: str = "filled"   # Fact 默认 status 就是 filled
+```
+
+**types.py 行 219**:
+```python
+review_status: str = "pending"   # 默认 review_status 是 pending
+```
+
+所以 Fact 的默认构造就是 `status="filled", review_status="pending"`！
+
+### Issue #5 确认：注册的是 `component.id` 不是 `component.component_id`
+
+**registry.py 行 276-277**:
+```python
+reg.register("component.id", "component", "id", "qualitative",
+             "component identifier e.g. K001")
+```
+
+只有 `component.id` 注册了，没有 `component.component_id`！Fixture Brief 里写的 `component.component_id` 是错误的。
+
+同时我也注意到 registry 里没有注册 `component.test_block_id`、`component.test_date`——这些 Fixture Brief 里提到的类型根本不存在。
+
+### 综合分析
+
+好，现在开始修正。我需要先修 `Step_8_Design_Decision_Closure.md`（权威文档），然后修 `Step_8_Coding_Contract_v1.md`，最后修 `Step_8_Fixture_Design_Sprint.md`。
+
+让我用 TodoWrite 跟踪，然后逐个文件修正。
+
+修正清单汇总：
+
+**File 1: Step_8_Design_Decision_Closure.md**
+- D-STEP8-04 (line 50): `candidate(pending) → ... → resolved → superseded` → 改状态机，`pending` 不能是 status，`resolved` 不是合法状态
+- §4 Fact Store 职责 (line 174-181): 整个状态转换图有 `pending` 作为 status 和 `resolved` 作为 status 的错误
+- §5 数据流 (line 204): `CandidateFact（CDM Fact dataclass with status="pending"...）` → 改成 transient，不是合法 CDM Fact
+
+**File 2: Step_8_Coding_Contract_v1.md**
+- §6 Mapper 输出 (line 225): `CandidateFact（CDM Fact dataclass with status="pending"）` → 改成 transient
+- §7 状态转换 (line 287-294): `Candidate(pending)` 和 `Conflict resolved(manual)` → 修正为合法状态流
+- §13 精度规则 (line 526-529): 标注为 fixture-specific，不是系统级规则
+- §14 E2E Flow (line 552): 同样有 `status="pending"` 错误
+- §10 Criterion: 移除 0.88×rule 等复杂规则
+
+**File 3: Step_8_Fixture_Design_Sprint.md**
+- §2: `component.component_id` → `component.id`；`component.test_block_id` 未注册 → 考虑是否需要扩展 registry 或简化
+- §4 ConclusionRule: 移除 0.88×rule，用最小规则 `concrete_strength >= design_strength`
+- §5 行数: 统一为 4 components × 3 measurements = 12 rows
+- 业务背景和实际判定规则分开
+
+好，让我开始。先从权威文档 Design Decision Closure 开始。
+
+现在修第一个文件 **Step_8_Design_Decision_Closure.md**。先从最核心的 D-STEP8-04 决策和状态机开始。
+好，现在开始修第一个文件 Step_8_Design_Decision_Closure.md。让我仔细列出需要修改的位置：
+
+**Design Decision Closure 中的具体错误位置：**
+
+1. **D-STEP8-04 (line 50)**:
+```
+candidate(pending) → confirmed/filled / missing / conflict → resolved → superseded
+```
+需要改成：
+```
+CandidateFact(transient) → Fact(status=filled, review_status=pending) → confirmed(filled + confirmed) / missing / conflict → superseded（revision 更正链）
+```
+同时移除 `resolved`（不存在这个 status）。
+
+2. **§4 Fact Store 职责 (lines 172-181)**:
+```
+Candidate(pending) → confirmed(filled, review_status=confirmed)
+                   → missing(status=missing, value=null)
+                   → conflict(status=conflict, candidates=[...], resolution_policy=manual)
+                   → rejected(status=rejected, review_status=rejected)
+Conflict 解决（manual）→ resolve_conflict(conflict_id, resolution_value, resolver_id)
+Revision 更正 → supersedes 链（CDM §15.5）
+```
+这里 `Candidate(pending)` 的 `pending` 是 status，需要修正。Conflict 解决后的状态也需要明确。
+
+3. **§5 数据流 (lines 203-208)**:
+```
+Mapper（确定性程度待 fixture 验证；见 §四 Q1-Q6）
+ ↓
+List[CandidateFact]（CDM Fact dataclass with status="pending", provenance="program"）
+ ↓
+Fact Store 状态机（CDM §15）
+ ↓
+Confirmed FactSet（status=filled, review_status=confirmed）
+```
+这里 `CandidateFact` 被错误地描述为 "CDM Fact dataclass with status=\"pending\""——需要改为 transient。
+
+好，让我用 Edit 逐个修。先从 D-STEP8-04 开始。
+
+好，D-STEP8-04 修正完成。现在修 §4 的 Fact Store 状态转换图（lines 172-181）：
+好，D-STEP8-04 修好了。现在修 §4 的 Fact Store 职责状态转换图。让我找到 lines 172-181 的内容。
+
+现在修 §5 数据流图中 CandidateFact 的错误描述：
+好。现在修 §5 数据流图中的 CandidateFact 描述。原 line 204 左右的：
+```
+List[CandidateFact]（CDM Fact dataclass with status="pending", provenance="program"）
+```
+
+需要修正为 transient。
+
+现在修 §5 IR Materialization 精度规则，把它标注为 fixture-specific、非系统级规则：
+好，现在还需要修一下 §5 的 IR Materialization 精度规则描述（之前的 line 243），把它标注为 fixture-specific。让我先找到那段内容。
+
+之前读的文件里 line 243 左右有：
+```
+精度规则：Step 8 无 TemplateSpec（OOS-13），使用默认精度——从 Fact.value 的 Python 精度推导（如 32.4 → 1 位小数）。这是确定性的，不涉及 LLM。
+```
+
+让我修正这段。
+
+还需要修 Decision Closure 中 OOS-13 的描述，保持一致性：
+好，Design Decision Closure 的主要修正完成了。让我也修一下 Decision Matrix 的决策分布统计，因为 D-STEP8-04 的修正里明确指出了非法 status 问题。不过先让我检查一下 Design Decision Closure 里还有没有其他地方提到 `status="pending"` 或 `resolved` 作为 status 的错误。
+
+让我再快速扫一下刚读过的 Design Decision Closure 全文... 我刚才修了：
+1. D-STEP8-04 ✓
+2. §4 Fact Store 职责 ✓  
+3. §5 数据流图 ✓
+4. §5 IR Materialization 精度规则 ✓
+
+让我确认一下 Design Decision Closure 里 Decision Matrix 后面的决策分布统计（line 63-66）和 Final Status（line 404-409）是否需要同步更新——因为这些是统计信息，应该保持一致。但我注意到 D-STEP8-04 的 Status 仍然是 "CLOSED"，只是内容变了，所以统计不需要变。
+
+好，现在 Design Decision Closure 修好了。让我也修一下 Decision Closure 中 OOS-13 的描述——原来 line 105 左右的：
+```
+OOS-13 | TemplateSpec / fact_display_spec | 属于 M4 Template Parser 产出，Step 8 的 IR Materialization 使用默认精度（如无 TemplateSpec，用 CDM Fact 的原始单位 + 自然精度）
+```
+
+让我把这里也改成 fixture-specific display policy 的表述。
+
+**文件 1（Design Decision Closure）修正完成**。现在进入文件 2（Coding Contract v1）。
+好，Design Decision Closure 修完了。让我更新 TODO 然后开始修第二个文件 Coding Contract v1。
+
+现在修 Coding Contract v1。先修 §6 Mapper 输出中的 `status="pending"` 错误：
+好，现在修 Coding Contract v1。让我列出这里需要修改的具体位置：
+
+1. **§6 Mapper 输出 (line 225)**:
+```
+- **输出**：List[CandidateFact]（CDM Fact dataclass with `status="pending"`, `provenance="program"`, `method="quoted"`）
+```
+→ 改成 transient
+
+2. **§7 Fact Store 状态转换 (lines 287-294)**:
+```
+Candidate(pending) → confirmed(filled, review_status=confirmed)
+                  → missing(status=missing, value=null)
+                  → conflict(status=conflict, candidates=[...], resolution_policy=manual)
+                  → rejected(status=rejected, review_status=rejected)
+
+Conflict resolved(manual) → confirmed(选定值) → superseded(旧值)
+Revision 更正 → supersedes 链（CDM §15.5）
+```
+→ 修正为合法状态流
+
+3. **§13 精度规则 (lines 526-529)**:
+```
+Step 8 无 TemplateSpec（OOS-13），使用默认精度：
+- fact.value 是 float → 保留原始 Python 精度
+- fact.value 是 int → 整数显示
+- 单位 = fact.unit（不强制转换）
+```
+→ 标注为 fixture-specific
+
+4. **§14 E2E Flow (line 552)**:
+```
+List[CandidateFact]（CDM Fact with status="pending", provenance="program"）
+```
+→ 改成 transient
+
+5. **§11 ConclusionRule**:
+需要检查有没有 0.88× 规则相关的引用... 让我先看一下 ConclusionRule 部分。原来的 Coding Contract §11 里 ConclusionRule 只写了最小聚合（qualified/unqualified/insufficient_evidence/missing），好像没有直接写 0.88× 规则。0.88× 规则主要在 Fixture Design Sprint 里。不过 Coding Contract 里可能有 Criterion 的复杂规则引用，我需要仔细检查。
+
+好，让我逐个修 Coding Contract。
+
+现在修 §7 Fact Store 的非法状态转换图：
+好，现在修 §7 Fact Store 的状态转换图。
+
+现在修 §13 精度规则，标注为 fixture-specific、非系统级：
+好，现在修 §13 精度规则，标注为 fixture-specific。
+
+现在修 §14 E2E Flow 中的 CandidateFact 错误：
+好，现在修 §14 E2E Flow 里的 CandidateFact 错误描述。
+
+还需要修 §7 FactStore 接口定义中的类型错误：
+好，现在还需要检查 Coding Contract §7 里的 FactStore 接口定义——原 line 263 有：
+```python
+def add_candidates(self, candidates: List[Fact]) -> None:
+    """添加 candidate facts（status 必须为 pending）。"""
+```
+
+这里写了 candidates 的类型是 `List[Fact]`，而且注释说 "status 必须为 pending"——这是错误的，因为 CandidateFact 是 transient，不是 Fact dataclass。让我修正这段接口定义。
+
+还有 §19 Decision Register 里的 D-STEP8-04 也需要同步更新（不过 Decision Register 是 OPEN/CLOSED 状态的追踪，D-STEP8-04 已经是 CLOSED 了，只是内容需要在 Coding Contract 的 Decision Register 里也同步修正）。
+
+让我先修 FactStore 接口。
+
+**文件 2（Coding Contract v1）核心修正完成**。现在进入最复杂的文件 3（Fixture Design Sprint）。
+好，Coding Contract 里的主要修正都完成了。让我也修一下 Coding Contract §19 Decision Register 里的 D-STEP8-04 描述（虽然状态还是 CLOSED，但内容应该同步修正）：
+
+原来的（我需要找到...）让我看一下，Decision Register 在文件末尾，应该有 D-STEP8-04 的记录写着 `candidate(pending) → confirmed/missing/conflict/rejected`。
+
+让我也检查一下 §3 Architecture Boundary 的四层结构图：
+```
+L1 RawSource / CellRaw（Parser 输出）
+    ↓
+L2 Candidate → Fact（Mapper + Store）
+```
+这里的 "Candidate → Fact" 是 OK 的，但如果太模糊也可以稍微明确一下。
+
+好，让我继续修 Fixture Design Sprint，那个有更多问题需要处理：
+- Issue #3: 行数矛盾（3×3=9 vs ≥10）→ 统一为 4 components × 3 measurements = 12 rows
+- Issue #4: 0.88× rule → 简化为 `concrete_strength >= design_strength`
+- Issue #5: component.component_id → component.id；test_block_id 未注册
+
+让我开始。
+
+现在开始修最复杂的 **Fixture Design Sprint**。先从 §2 的 fact_type 注册错误和 component 标识问题开始。
+好，现在修 Fixture Design Sprint。这个文件的问题最集中：
+
+**Issue #5（严重）：component.component_id vs component.id**
+
+registry.py 里**只有** `component.id` 注册了（L276-277），没有 `component.component_id`。Fixture Design Sprint §2 里写了：
+```
+component.component_id | component | 构件编号（scope_key） | **必选**
+component.test_block_id | component | 试块编号（可选区分） | 可选
+component.test_date | component | 检测日期 | 可选
+```
+
+而且 registry 里也**没有** `component.test_block_id` 和 `component.test_date`。
+
+所以修正策略：
+- `component.component_id` → 改为 `component.id`（已注册）
+- `component.test_block_id` → 这个类型未注册，且第一版 Step 8 是否真的需要？用户质疑这个。让我重新想一下...
+
+Fixture Design Sprint 推荐的是方案 B（试块为行）。每行有：
+```
+构件编号 | 试块编号 | 设计强度等级 | 抗压强度 | 检验日期
+```
+
+如果每一行都要映射到 Fact，那么：
+- 构件编号列 → `component.id`（但问题是多行同一个 K001，Mapper 怎么知道它们是同一个 component？）
+- 试块编号列 → 需要新的 fact_type？或者这只是结构化的一部分，不进 CDM？
+
+等等，让我重新想。CDM 里的 Fact 是三段式 ID `fact:scope_class.instance_key.attribute`。在方案 B 里，每行是一个试块测量值，那这个测量值到底是：
+
+a) 还是 `fact:component.K001.concrete_strength`？不对，因为同一个 component 有 3 个不同的试块值，那同一个 fact_id 会有 3 个不同的值 → conflict！这显然不对。
+
+b) 还是换一个 scope_class？比如用 `sample`？`sample` 是已注册的 scope_class（registry.py L22: `"sample"`）。那每个试块 = 一个 sample 实例。这样：
+```
+fact:sample.S001.concrete_strength
+fact:sample.S002.concrete_strength
+...
+```
+但是 registry 里**只注册了** `sample.id`（L301-302），**没有** `sample.concrete_strength`！
+
+c) 还是回到方案 A（构件为行、试块为列）？这样每行一个 component，3 个试块值在 3 个列里。但 Mapper 怎么处理同类型值在不同列里？
+
+让我重新审视 Fixture Design Sprint 原来的设计：
+- 方案 B（试块为行）被推荐为 "更好"，因为更细粒度
+- 但方案 B 引入了 `component.test_block_id`（未注册）和 `component.test_date`（未注册）
+
+用户的原始指令 #5 说：
+> 原则：不为了 Fixture 方便而扩展新的 FactType 或实体层级。如果现有 CDM 无法表达某个结构，记录 Design Conflict，而不是静默扩展 Schema。
+
+所以策略应该是：
+1. 先尽量复用已注册的 fact_type
+2. 如果不够，记录 Design Conflict，而不是静默添加
+
+已注册的 component 类型：
+```
+component.id          → 构件标识
+component.concrete_strength → 抗压强度
+```
+
+已注册的 sample 类型：
+```
+sample.id             → 样品标识
+```
+
+好，那方案 B 的问题就很清楚了：如果用 `sample` scope_class，registry 里缺 `sample.concrete_strength`。如果用 `component` scope_class，同一个 component.concrete_strength 会有多个值。
+
+让我回到方案 A（构件为行）：
+```
+Row 1 (Header): 构件编号 | 设计强度等级(MPa) | 试块1强度(MPa) | 试块2强度(MPa) | 试块3强度(MPa) | 检验日期
+Row 2 (Data):   K001     | 30               | 32.4            | 31.8            | 33.1            | 2026-09-15
+```
+
+那 Mapper 输出什么？
+- 构件编号列（"K001"）→ `fact:component.K001.id`（fact_type=component.id，value="K001"）
+- 设计强度等级（30）→ 这个... 它是 Criterion 的值，不是 Fact？或者它是 `fact:component.K001.design_strength`？但 registry 里没注册这个！
+- 试块1强度（32.4）→ `fact:component.K001.concrete_strength`？不对，因为试块2和试块3也会映射到同一个 fact_id...
+
+啊，我发现了一个更深层的问题。Step 8 Fixture Design Sprint 的**原始设计本身**就假设了一些未注册的 fact_type。让我仔细想想应该怎么处理。
+
+**保守策略（最符合用户 #5 指令）：**
+
+Step 8 第一版 fixture 只使用已注册的 fact_type：
+- `component.id` — 构件标识
+- `component.concrete_strength` — 抗压强度
+
+而设计强度等级（design strength）和检测日期（test date）：
+- 设计强度等级：作为 fixture-level 的 Criterion 常量硬编码，不进 CDM Fact Store。这更符合实际——设计强度是规范/设计文件里的，不是检测出来的。
+- 检测日期：可以先不进 CDM，或者如果需要就扩展 registry（但这属于"为了 fixture 方便扩展"，需要记录）
+
+等等，用户指令 #5 说"不为了 Fixture 方便而扩展新的 FactType"，但同时项目 memory 里有 "Fixture 引入不在 registry 的 fact_type → 需先扩展 registry（不算修改 CDM Schema）"——所以扩展 registry 是允许的，只要不修改 03_CANONICAL_DATA_MODEL.md。
+
+好，那让我整理一下修正后的 Fixture 设计：
+
+**已注册类型可直接用：**
+- `component.id` → 构件编号
+- `component.concrete_strength` → 单个强度值
+
+**需要扩展 registry 才能用的：**
+- `component.design_strength` → 设计强度等级（Fixture Brief §4 Criterion 需要）
+- `component.measurement_date` → 检测日期
+
+**不需要的：**
+- `component.test_block_id` → 如果用方案 B，每个试块的标识...但用户质疑这个。简化处理：第一版不用。
+- 设计强度等级也可以不进 Fact Store，直接作为 Criterion.value 常量。这更简单。
+
+好，让我重新设计 fixture 的 fact_type 使用：
+
+```
+已注册（直接用）：
+  component.id → "K001", "K002", ...
+  component.concrete_strength → 单个强度值（但注意一个 component 有多个试块值的问题）
+
+需要扩展 registry（不算修改 CDM Schema）：
+  component.design_strength → 设计强度等级值（MPa）。但这是 fixture-level 常量（30 MPa），所有行都一样。
+
+或者更简单的：
+  设计强度等级不进 CDM，直接作为 fixture 里的 Criterion.value 常量。
+```
+
+那一个核心问题：**一个 component 有多个试块强度值（3 个），怎么映射到三段式 Fact ID？**
+
+选项：
+a) 每个试块值 = 单独的 Fact，用 sample scope_class → 但需要注册 sample.concrete_strength
+b) 每个 component 只有一个 concrete_strength Fact = 平均值（由 Compute 模块计算）→ 原始试块值不进 CDM？但这样 Parser → Mapper 只有平均值？不对，Compute 的输入是原始试块 Facts
+c) 保持 component 作为 scope_class，用 registry 扩展多个 attribute（比如 component.concrete_strength_test1, component.concrete_strength_test2...）→ 这很丑陋，违反受控词表原则
+
+最佳选项：**扩展 sample.concrete_strength 到 registry**。这样：
+- 每个试块 = 一个 sample 实例（S001, S002, ..., S012）
+- 每个试块有一个 `fact:sample.Sxxx.concrete_strength` Fact
+- 同时每个 sample 需要知道它属于哪个 component → 这又需要 `sample.host_component_id` 类型？registry 里也没...
+
+啊，层级关系的问题来了。CDM §17 里说 Defect 是弱实体，Defect.host → Component。那 Sample 是不是也应该这样？但 registry 里没注册这个关系。
+
+用户指令 #5 最后说：
+> 如果现有 CDM 无法表达某个结构，记录 Design Conflict，而不是静默扩展 Schema。
+
+好，那让我诚实面对这个问题，记录一个 **Design Conflict D-CONFLICT-001**：
+
+> Step 8 Fixture 需要表达"一个 component 有多个试块强度值"。CDM 已注册的 scope_class 有 component（scope_key=K001）和 sample（scope_key=S001）。但：
+> - 用 component scope_class → 同一个 component.concrete_strength 会有多值冲突
+> - 用 sample scope_class → registry 缺 sample.concrete_strength 和 sample.host_component_id
+> - 方案 B（试块为行）的 Mapper 复杂度显著高于方案 A
+
+**建议**：Step 8 第一版退回方案 A（构件为行，试块展开为列），Mapper 只需处理每行一个 component 的三个值 → 三个 Fact（但这三个 Fact 如何区分？）
+
+或者更激进：**Step 8 第一版就用方案 A，但只映射每个 component 的一个平均值 Fact**。Compute 模块直接对 Excel 的三列做计算，产出一个 computed Fact。这样就避免了多值问题。但这意味着 Mapper 需要理解 Excel 三列是"同类型数据"——这已经超出了纯列名匹配的确定性范围。
+
+让我再想想... 其实最简单的做法是：
+
+**Step 8 第一版 Mapper 的职责就这么简单：**
+- Excel 每一行 → 一个 Component Fact 集
+- "构件编号"列 → `fact:component.K001.id`（已注册）
+- "试块1强度"列 → 需要新注册 `component.strength_test1`？不行，这违反受控词表原则。
+
+OK，我现在承认 Fixture Design Sprint 的原始设计有几个需要修复的点，我会在修正后的文档里诚实记录。
+
+让我现在开始修 Fixture Design Sprint，处理以下问题：
+1. Issue #3: 行数统一为 4 components × 3 measurements = 12 rows
+2. Issue #4: 移除 0.88×rule，简化 ConclusionRule 为 `concrete_strength >= design_strength`
+3. Issue #5: component.component_id → component.id；test_block_id 未注册；记录 Design Conflict
+4. 业务背景和实际判定规则分离
+
+好，让我开始。
+
+现在修 §4 ConclusionRule——移除 0.88× 复杂规则，简化为 Step 8 最小判定，业务背景与判定规则分离：
+好，现在修 §4 ConclusionRule——移除 0.88×rule，简化为最小规则，业务背景和实际判定规则分开。
+
+现在修 §5 Excel 结构设计——统一为 4 components × 3 measurements = 12 rows，并明确每个 component 的测试目的：
+好，现在修 §5 Excel 结构设计——统一行数为 4 components × 3 measurements = 12 rows，同时修正 component 标识，明确每个 component 的测试目的。
+
+现在修 §6 D-STEP8-02 关闭条件，把"至少 10 行"改为明确的 12 行，并加上 registry 扩展条件：
+好，现在修 §6 D-STEP8-02 关闭条件里的行数要求，还有 §9 Fixture Design Sprint 工作流里的行数和 registry 扩展。让我也修一下 fixture 关闭条件里的 "至少 10 个数据行" 改为明确的 12 行要求。
+
+最后修 §9 Fixture Design Sprint 工作流里的行数和 registry 扩展任务：
+好，现在修 §9 Fixture Design Sprint 工作流里的任务项——把原来的 "3 个构件 × 3 个试块 = 9 行数据" 改成 12 行，把 registry 扩展加入任务清单。
+
+让我找到那段内容并修正。
+
+**三个 Step 8 设计文档修正全部完成**。现在进行交叉校验一致性检查，然后输出最终状态。
+好，三个文件都修完了。现在我需要做最后一步：交叉校验一致性，然后输出最终的 STEP 8 DESIGN STATUS 和 D-STEP8-02/03/06/07/09 逐项状态。
+
+让我更新 TODO，然后做交叉校验和输出。
+
+不过在此之前，让我先回顾一下用户的 8 个修正要求，逐条确认我修到位了没有：
+
+### 用户要求 1：修正 Fact.status / review_status 语义
+✅ Design Decision Closure D-STEP8-04：移除了 `candidate(pending)` 和 `resolved`
+✅ Design Decision Closure §4 状态转换图：完整重写，明确区分 status vs review_status
+✅ Design Decision Closure §5 数据流图：CandidateFact 改为 transient
+✅ Coding Contract §6 Mapper 输出：CandidateFact 改为 transient
+✅ Coding Contract §7 FactStore 接口：`ingest_candidates(CandidateFact)` 代替 `add_candidates(Fact with pending status)`
+✅ Coding Contract §7 状态转换图：完整重写
+
+### 用户要求 2：禁止 resolved 作为 Fact.status
+✅ 同上，所有 `resolved` 引用已移除
+✅ 冲突解决后状态转换明确：选定值 → filled + confirmed，旧值 → superseded
+
+### 用户要求 3：修正 Fixture Brief 内部矛盾（行数）
+✅ Fixture Design Sprint §5：统一为 4 components × 3 measurements = 12 rows
+✅ Fixture Design Sprint §6 关闭条件：固定 12 行
+✅ Fixture Design Sprint §9 工作流：更新为 12 行
+
+### 用户要求 4：收缩第一版混凝土业务规则
+✅ Fixture Design Sprint §4：显式分离"业务背景（GB/T 50081-2019 完整规则）"和"Step 8 第一版实际判定规则（concrete_strength >= 30 MPa）"
+✅ 0.88× rule、异常值/中值法、尺寸换算全部列为"未来扩展"
+
+### 用户要求 5：component.id / component.component_id
+✅ registry.py 证据确认：只有 `component.id` 注册
+✅ Fixture Design Sprint §2：标记 `component.component_id` 未注册、禁用
+✅ Fixture Design Sprint §5 Column→fact_type 映射：全部使用已注册类型（component.id + sample.id + sample.concrete_strength）
+✅ 新登记 D-CONFLICT-001 记录层级表达缺口
+
+### 用户要求 6：收缩 Step 8 display policy
+✅ Design Decision Closure §5：标注为 fixture-specific display policy，不宣称是最终 TemplateSpec 规则
+✅ Coding Contract §13：同，明确 fixture-specific、临时、不污染冻结架构
+✅ Design Decision Closure OOS-13：同步更新
+
+### 用户要求 7：保持已有正确边界
+✅ Parsing ≠ Semantic Interpretation 铁律未动
+✅ 15 条 OOS 未动
+✅ 7 个 Frozen docs 未动
+
+### 用户要求 8：输出要求
+现在需要输出最终的状态。
+
+好，让我更新 TODO，然后调用 AdvisorTool 做最终的 review。
+
+在输出最终状态之前，让我先调用 AdvisorTool 做最后一轮交叉检查，确保修正的一致性和完整性。
+
+*正在请求专家建议，优化解决方案，该过程耗时可能较长，请耐心等待...*
+
+Advisor 发现三个一致性缺口。让我先 grep 检查残留问题，再逐一修复。
+好，在输出最终状态之前，让我先调用 AdvisorTool 做一个最终的交叉检查——确认所有修正方向正确、没有遗漏。然后我再输出最终状态。
+正在请求专家建议.......
+
+已获取专家建议
+
+Advisor 发现了三个一致性缺口，让我逐一修复：
+
+1. **Design Closure §3 In Scope table** 里 `add_candidates()` 没改成 `ingest_candidates()`
+2. **D-CONFLICT-001** 只在 Fixture Sprint 里登记了，没有在 Design Closure 的 Risk table 和 Decision Matrix 里注册
+3. **Fixture Sprint §3 D-STEP8-07** 里 Compute 输入还是 `component.concrete_strength`，但 P1 路径应该是 `sample.concrete_strength`
+
+还有一个 grep 任务来查残留。让我先 grep 一下，然后再修。
+
+grep 结果干净——残留都是正确上下文（禁令说明、CDM Conflict 字段、业务背景/未来扩展）。现在修 Advisor 指出的三个一致性缺口。
+
+**缺口 1**：Design Closure §3 In Scope table 的 `add_candidates()` 未改名。让我定位：
+好，grep 结果：
+
+1. `status="pending"` — **零匹配** ✅ 干净
+2. `.component_id` — 1 处残留，在 Fixture Design Sprint L41，是我写的"禁用标记"，是正确的（用来指出它不存在），**不需要修**
+3. `resolved` — 4 处匹配：
+   - Coding Contract L313: "不存在于 Fact.status 枚举" — 正确，是禁令说明 ✅
+   - Coding Contract L335: `resolved_by: Optional[str] = None` — 这是 Conflict dataclass 的字段名！CDM §34 定义的。这是合法的 Conflict 字段，不是 Fact.status ✅
+   - Design Closure L50 和 L197: 都是禁令说明 ✅
+   → 这 4 处都是**正确上下文**，不需要修
+4. `0.88` — 2 处，都在 Fixture Design Sprint：
+   - L96: 业务背景说明里（正确，用来解释完整规范是什么）
+   - L119: "未来扩展"清单里（正确，说明暂不实现）
+   → 这 2 处都是**正确上下文**（我把它从"冻结规则"移到了"背景/未来扩展"里），不需要修
+
+好，grep 结果很干净，残留都是正确的。现在让我修 Advisor 指出的三个一致性缺口：
+
+1. Design Closure §3 In Scope table 里的 `add_candidates()` → `ingest_candidates()`
+2. Design Closure §10 Risk table 里注册 D-CONFLICT-001
+3. Fixture Sprint §3 Compute 输入 fact_type 更新
+
+让我先定位这些位置。
+
+好，找到 L307。同时让我也定位 Fixture Sprint §3 的 Compute 引用：
+好，Design Closure L307 有 `add_candidates()`，需要改成 `ingest_candidates()`。同时还有 Fixture Sprint §3 的 compute 输入 fact_type，让我找到那个。
+
+现在三个一致性缺口一起修。先修 Design Closure L307 和 Risks 表：
+好，Fixture Sprint L82 有 `component.concrete_strength` 作为 Compute 输入——这是旧方案 B 的遗留，P1 路径应该用 `sample.concrete_strength`。还有 L15 也提到了"component.concrete_strength 已在 registry 注册（无需扩展）"，但 P1 路径需要扩展 `sample.concrete_strength`。
+
+让我现在做三个修正：
+1. Design Closure L307: `add_candidates()` → `ingest_candidates()`
+2. Fixture Sprint L82: `component.concrete_strength` → `sample.concrete_strength`，且明确是按 component.host 分组
+3. 还要在 Design Closure 里注册 D-CONFLICT-001
+
+让我也看一下 Design Closure §10 Risks 表格来加入 D-CONFLICT-001。
+
+现在在 Design Closure §10 Risks 表里注册 D-CONFLICT-001：
+好，现在在 Design Closure §10 Risks 表格里注册 D-CONFLICT-001。让我找到 Risks 表的位置。
+
+现在在 Design Closure Risks 表后、§11 Known Non-Blockers 前，登记 D-CONFLICT-001：
+好，现在让我在 Risks 表后面加入 D-CONFLICT-001 的登记。让我先看看 Risks 表后面还有什么内容——应该是 §11 Known Non-Blockers。让我找到 R6 后面加上 D-CONFLICT-001 登记。
+
+现在修 Fixture Sprint §3 Compute 输入 fact_type，对齐 P1 路径：
+好，现在修 Fixture Sprint §3 Compute 输入 fact_type——把旧的 `component.concrete_strength` 改成 P1 路径的 `sample.concrete_strength`。
+
+Advisor 指出的三个一致性缺口全部修复。现在输出最终状态报告。
+好，Advisor 指出的三个一致性缺口都修完了。现在让我更新 TODO，然后输出最终的状态报告。
+
+好，现在输出最终的状态报告。让我组织一下：
+
+1. 先总结本次 Session 完成了什么
+2. 逐项对应用户的 8 个修正要求
+3. 输出 STEP 8 DESIGN STATUS 和 STEP 8 CODING CONTRACT 状态
+4. 逐项列出 D-STEP8-02/03/06/07/09 的状态（注意这些还是 OPEN，因为 fixture 还没创建）
+5. 列出新发现的 D-CONFLICT-001
+6. 明确本 Session 到此停止
+
+让我确认当前决策状态：
+- D-STEP8-02 Fixture Source → **OPEN**（fixture 设计完成了方案 Excel 结构，但还没实际创建文件）
+- D-STEP8-03 Mapper 确定性 → **OPEN**（需要 fixture 后回答 Q1-Q6）
+- D-STEP8-06 First Fact Types → **OPEN**（方向已定：component.id + sample.id + sample.concrete_strength 扩展 + component.concrete_strength 作为 computed 输出；但 registry 扩展还没做）
+- D-STEP8-07 First Compute set → **OPEN**（方向已定：average of sample.concrete_strength grouped by component）
+- D-STEP8-09 First ConclusionRule → **OPEN**（方向已定：concrete_strength >= design_strength；但 rule_id 和 Evaluation 字段还没冻结）
+
+所以这 5 个还是 OPEN，但每个的方向都更清晰了。还有新发现的 D-CONFLICT-001 需要在 Design Closure 里正式登记（已经登记了）。
+
+好，让我输出。
+---
+
+## Step 8 Pre-Coding Design Repair — 完成报告
+
+### 本次 Session 完成了什么
+
+对 Step 8 的 3 个未冻结设计产物执行了系统性设计修正，对应你提出的 **8 个修正点**：
+
+| # | 修正要求 | 修到位？ | 修改的文件 |
+|---|---|---|---|
+| 1 | `pending` 不是合法 Fact.status；CandidateFact 改为 transient | ✅ | Design Closure §2/§4/§5；Coding Contract §6/§7/§14 |
+| 2 | `resolved` 不是合法 Fact.status；Conflict 解决后的状态转换明确为 `filled` + `superseded` | ✅ | Design Closure §2/§4；Coding Contract §7 |
+| 3 | Fixture Brief 行数矛盾统一为 **4 components × 3 measurements = 12 rows** | ✅ | Fixture Sprint §5/§6/§9 |
+| 4 | 收缩业务规则：移除 0.88×、异常值/中值法、尺寸换算；第一版用 `concrete_strength >= 30 MPa` | ✅ | Fixture Sprint §4（业务背景 vs 冻结规则显式分离） |
+| 5 | `component.component_id` 未注册 → 用 `component.id`；`sample.concrete_strength` 需扩展 registry；**D-CONFLICT-001 登记** | ✅ | Fixture Sprint §2/§5；Design Closure §10.1 |
+| 6 | 精度规则标注为 `fixture-specific display policy`，声明不污染 TemplateSpec | ✅ | Design Closure §5；Coding Contract §13；OOS-13 同步 |
+| 7 | Parsing ≠ Semantic Interpretation / 15 条 OOS / 7 个 Frozen docs 全部保持不变 | ✅ | 无修改 |
+| 8 | 只修改了三个 Step 8 未冻结设计产物 | ✅ | 无生产代码 |
+
+### grep 残留检查
+
+| 搜索模式 | 结果 |
+|---|---|
+| `status="pending"` | 0 命中 ✅ |
+| `.component_id` | 1 命中（Fixture Sprint §2 的 **禁用标记**，正确） |
+| `resolved` | 4 命中（全部是禁令说明或 CDM Conflict 字段，正确） |
+| `0.88` | 2 命中（业务背景说明 + 未来扩展清单，正确） |
+
+---
+
+### STEP 8 DESIGN STATUS = **NEEDS DECISION**
+
+### STEP 8 CODING CONTRACT = **PROPOSED**
+
+（状态没升级，因为 5 个关键决策还是 OPEN——但每个的方向都更清晰了）
+
+---
+
+### D-STEP8-02 / 03 / 06 / 07 / 09 逐项状态
+
+| Decision | Status | 修正后的方向（比之前更明确） |
+|---|---|---|
+| **D-STEP8-02 Fixture Source** | **OPEN** | 方向已定：方案 B（试块为行）+ 12 行固定 + 3 列头（构件编号/试块编号/抗压强度）+ P1 路径 |
+| **D-STEP8-03 Mapper 确定性** | **OPEN** | 需 fixture 创建后回答 Q1-Q6；当前预期"结果 A（全部确定性）" |
+| **D-STEP8-06 First Fact Types** | **OPEN** | 方向已定：`component.id` ✅ + `sample.id` ✅ + 扩展 `sample.concrete_strength`（需 registry +1）；**不扩展** `component.concrete_strength` 原始值（用 computed 输出） |
+| **D-STEP8-07 First Compute set** | **OPEN** | 方向已定：`average` of `sample.concrete_strength` grouped by component；computed 输出 scope_class=component，fact_type=**待定**（需 registry +1 `component.concrete_strength` 作为 computed 类型？还是复用？—— 需 fixture 确认） |
+| **D-STEP8-09 First ConclusionRule** | **OPEN** | 方向已定：`concrete_strength >= design_strength` 单条件；rule_id = `step8_minimal_ge`；Criterion.value = 30 MPa（fixture 常量不进 CDM） |
+
+---
+
+### 新发现并登记
+
+| ID | 描述 |
+|---|---|
+| **D-CONFLICT-001** | CDM 当前缺少 component→sample 层级表达。暂定 P1 路径（每个试块 = 独立 sample Fact），但 registry 需扩展 `sample.concrete_strength` + 可能的 host 关联 |
+
+---
+
+### READY FOR CODING 门禁是否通过？
+
+**NO**（D-STEP8-02/03/06/07/09 仍然是 OPEN）。
+
+---
+
+### 下一阶段
+
+```
+Step 8 Fixture Design Session（新 Session）
+  ├── 创建 inspection.xlsx（12 行）
+  ├── 扩展 registry +1~2 类型
+  ├── 回答 D-STEP8-03 Q1-Q6
+  ├── 关闭 D-STEP8-02 / 06 / 07 / 09
+  ├── 如 D-STEP8-03 也关闭 → READY FOR CODING
+  └── Step 8 Coding Contract v1 升级为 READY FOR CODING
+```
+
+---
+
+*本 Session 到此停止。**不写任何生产代码**。等待 Fixture Design Session 关闭 OPEN 决策后再进入 Coding。*
