@@ -1,0 +1,525 @@
+I'll start by exploring the provided S0P file and understanding the current project state
+The user has invoked the `/plan` skill with a file path. Let me first look at the provided file path. This is a planning task in Plan Mode. Let me explore.
+
+The path given is `g:\workspace\zixun4/c:\Users\...\long-text\home\mv1qdwzc-tru4\# S0P Step....txt`
+
+Let me find the actual file. Let me use Glob to find it.
+
+Also, the instructions say I should load the "意图转代码" skill before any programming behavior in this project. But I'm in plan mode. Let me first explore.
+
+Let me start by reading the S0P file. Let me find it.
+
+Let me search more broadly. The path had a conflict between `g:\workspace\zixun4` and the full Windows path. Let me check the actual file.
+
+The file in that weird path doesn't exist. But the user prefixed with `g:\workspace\zixun4/`. The actual path seems to reference a workspaceStorage long-text file. The long-text folder may be inside the project? Let me search. Actually Glob for such pattern returned nothing. Let me look at the `.trae` dir and search for the S0P file. Let me find any file containing "S0P" in the workspaceStorage or project.
+
+The paths are truncated. Let me get the full paths with more detail. The column width is being truncated. Let me output just the relative paths.
+
+The target file is the latest one. Let me read it
+
+This S0P defines a Step 8 independent technical review task. Let me explore the current project state to build an accurate plan for executing this review.
+
+The user wants me to execute an independent technical review of Step 8. But this is within Plan Mode. Wait — the user invoked `/plan` with this S0P file. So the intent is: the user wants me to review this S0P and create a plan. But actually the S0P content is a review task itself.
+
+Let me re-read the user's request. They invoked `/plan` with the file path. The file content is a detailed instruction to perform an independent technical review of Step 8. 
+
+In Plan Mode, I must not execute the review (which involves running tests, reading files). Actually reading files is allowed in Plan Mode. But running tests is not necessarily a "change" - but plan mode says no non-readonly tools. Running pytest is read-only in terms of files (well it may create cache files). Actually the S0P says the review should run tests.
+
+But I'm in Plan Mode. The user invoked `/plan`. So the plan-phase intent is: create a plan for how to execute this review.
+
+Wait, but the actual S0P is itself a "plan" of sorts — an instruction for the review. The user wants me to plan how to execute the Step 8 independent review.
+
+Let me think about what the user actually wants. The user typed `/plan <path-to-S0P>`. In this project, the `/plan` probably means: read this S0P and produce an implementation plan. But this S0P is a review task, not an implementation task. So the "plan" would be a plan for conducting the independent review.
+
+Given the memory context: "Step 8 独立审查仍为 PENDING" and "未完成事项包括独立审查执行". So the project is at the point where independent review of Step 8 is the next action. The user is now providing this S0P that defines how to do that review.
+
+So my task: produce a plan (in Plan Mode) for executing the Step 8 Independent Review per this S0P.
+
+I should do Phase 1 exploration — read the key files mentioned in the S0P to understand the state. Then generate a plan.
+
+Let me focus exploration. I need to look at:
+- The review package: reviews/Step_8_Independent_Review_Package.md
+- Coding Contract: Step_8_Coding_Contract_v1.md (need to find it)
+- Current state of files existence.
+
+Let me explore the relevant directories.
+
+Let me look at the docs, reviews dir, and find the coding contract and design docs.
+
+Given plan mode, I can read. Let me explore in parallel using an agent or direct reads. This is a big task. Let me do targeted exploration.
+
+Let me look at key things:
+1. Is there a plan file? No.
+2. The `.trae` directory contents.
+3. reviews directory.
+4. src/cdm, src/eval structure (existence).
+5. The presence of fixture case_step8_defect_v1.
+6. Whether the coding contract exists.
+
+Let me do this exploration. Given the scope, I'll launch an Explore agent to gather the state, plus direct reads of the review package.
+
+Let me first glob the docs and reviews and .trae dirs.
+
+Now I understand the structure. Let me read the key documents. The S0P says the review package should be at `reviews/Step_8_Independent_Review_Package.md`. Let me read the Coding Contract and the Review Package. These are the two central documents. Let me read them. Also look at the reviews directory contents and the code structure.
+
+Let me read the Coding Contract v1 and the Review Package first.
+
+I have a strong understanding of the review task. Let me verify the key implementation artifacts exist to ground the plan.
+
+I now understand the task well. The S0P is a detailed instruction to execute an independent technical review of Step 8. The user is invoking `/plan` with this file. So the user wants me to plan how to execute this independent review.
+
+In Plan Mode, I should:
+1. Phase 1: Explore — understand the codebase structure relevant to the review (already did significant reading)
+2. Phase 2: Clarify — determine if ambiguity exists
+3. Phase 3: Generate Plan — write plan file
+4. Phase 4: Notify
+
+The plan here is a plan for conducting the Step 8 Independent Review. The review is a read-only activity (per the S0P) — it involves reading files, running tests, and producing a review report.
+
+Key questions for the user:
+1. What should be the output/deliverable? The S0P says produce a complete review report. Should this be written to a file (reviews/Step_8_Independent_Review_Report.md) following the format in §14, or output inline? Since this is a review task producing a review report, probably write it as a file.
+
+2. Should I actually run the tests as part of the review? The S0P task F requires independently re-running tests (pytest). In plan mode I can't run them yet, but the plan should include running them as part of execution.
+
+Let me think about what exploration I still need. I've read the two central docs (Coding Contract + Review Package). I should also verify key implementation files exist and understand structure. But since this is a review plan, I mostly need to know the layout and the review checklist. I think I have enough architectural context. Let me do a bit more exploration of the actual production code to ground the plan (read the key module files briefly) so the plan is grounded.
+
+Actually, let me reconsider. The user's request is `/plan <path-to-sop>`. The most natural interpretation: plan how to execute the Step 8 independent review described in the S0P. Since Plan mode means I produce a plan (not execute), and then upon approval I execute the review.
+
+Given the review itself is largely read-only + running tests, my plan is essentially a structured execution plan following the S0P's task breakdown (A-H), plus producing the final review report.
+
+Let me do a quick exploration of the src structure to make the plan grounded. Let me check the src directories and test files exist, and check pytest.ini.
+
+Let me look at the src/eval structure (Step 7-E/F) and confirm paths. Also check reviews dir contents.
+
+Given the memory shows this is the exact next step ("Step 8 独立审查仍为 PENDING", "未完成事项包括独立审查执行"), the plan is clear.
+
+Let me do minimal additional exploration to ground the plan, then possibly ask clarifying questions.
+
+Let me check:
+- src/eval/accuracy/data_structures.py exists (SystemOutput, evaluate_case)
+- src/eval/run exists
+- tests/eval/fixtures/case_step8_defect_v1 exists
+- pytest.ini
+
+Let me glob/read those.
+
+I've confirmed the key artifacts exist (production modules, 171-test suite, fixture, Step 7-E/F evaluation layers). Before finalizing the plan, let me briefly state my understanding of intent, per the project rule to confirm intent first.
+
+**我的意图理解：**
+- 本轮任务 = 依据 S0P 文件，对 Step 8 已实现代码执行**独立技术审查**（只读，不修复、不改契约、不宣布验收）。
+- 依据 `reviews/Step_8_Independent_Review_Package.md`（当前状态 `INDEPENDENT REVIEW PENDING`）与 `docs/Step_8_Coding_Contract_v1.md`（契约基线 READY FOR CODING）。
+- 产出符合 S0P §14 A-L 格式的完整审查报告，并给出唯一结论（ACCEPT / ACCEPT WITH NON-BLOCKERS / REQUEST CHANGES / REJECT）。
+- E2E / P0 证据需独立复跑测试核实，不能信任实施者摘要。
+
+我准备写入执行计划。有关键一处需确认的决策已纳入计划（默认写入 `reviews/` 目录），你可审阅后调整。
+
+All the artifacts exist. I confirmed:
+- Production code modules: parsers, facts, compute, rules, ir, eval
+- Fixture: case_step8_defect_v1 with 3 files
+- Step 7-E (accuracy) and Step 7-F (run) exist
+- pytest.ini (pythonpath = src)
+
+Now, I have enough to write the plan. Let me consider clarifying questions.
+
+The S0P is essentially a review task definition. The plan is how to execute the review. I need to determine:
+1. Deliverable location/format. The S0P §14 defines a report format. Should I write it to a file like `reviews/Step_8_Independent_Review_Report.md`? This is a review, and the project deliverable convention places review docs in `reviews/`. Given the S0P says "本轮只输出审查结果，不实施修复" and §14 says "请输出一份完整的审查报告" — output a report. Given plan/execution, upon approval I'd produce the report. I'll plan to write it to `reviews/Step_8_Independent_Review_Report.md`.
+
+2. Should I actually run the tests (Task F)? The S0P requires it. In plan mode I can't. But the plan will include running the pytest commands in execution.
+
+I think there's one or two clarifying questions worth asking to align intent, per the user rules ("必须提供你的理解供确认") and Plan mode Phase 2.
+
+Potential questions:
+1. Where should the review report/deliverable be written? (reviews/Step_8_Independent_Review_Report.md vs inline chat output)
+2. Given the review is inherently read-only, do they want me to run the full pytest suite during the review (which creates .pytest_cache), or trust existing recorded results and only re-run targeted ones?
+3. Scope confirmation: the review concludes with a verdict (ACCEPT / ACCEPT WITH NON-BLOCKERS / REQUEST CHANGES / REJECT) — confirm they want the full verdict.
+
+Per user rules #4: "在进行任务前必须将你理解的意图提供给用户进行确认。" I should present my understanding.
+
+Let me ask focused clarifying questions. Per Phase 2: max 2 rounds, max 3 questions per round, structured multiple-choice.
+
+Let me ask 2-3 questions:
+
+Q1: Deliverable form — write report to a file in reviews/ vs inline only?
+Q2: Test execution — run full baseline pytest during review (creates cache) or rely on recorded results + targeted reruns?
+Q3: Verdict needed — full verdict per §13 / §14J? (probably yes, maybe not needed to ask)
+
+Actually let me limit to 2 key questions. Q1 (deliverable) and Q2 (test execution). These materially change the plan.
+
+Let me ask via AskUserQuestion. Wait — the plan mode says use AskUserQuestion in Phase 2. But I don't see the AskUserQuestion tool in my available functions. Let me check... The tools available: Agent, Skill, Glob, Grep, Read, StopCommand, Shell, DeleteFile, Edit, Write, TodoWrite, NotifyUser, EnterPlanMode, new_context, browser_waiting_for_user_interaction, TaskStop, TaskOutput, SendMessage, AdvisorTool, ToolSearch, DeferExecuteTool.
+
+There's no AskUserQuestion tool listed. Hmm. The plan mode instructions reference AskUserQuestion but it's not in my tool set. I could use a plain text question to the user instead. But the instruction says structured multiple-choice. Since I don't have the tool, I'll present the clarifying questions as text.
+
+Actually, wait. Let me reconsider. The intent is fairly clear. The user gave me a S0P that defines exactly what the review entails. The deliverables and method are well-defined by the S0P itself:
+- Test commands are prescribed (Task F)
+- Report format is prescribed (Task G/H/I/J/K/L → §14 A-L)
+- The review is read-only by definition
+
+The main open question is just where the report output goes. Given the project's deliverables directory is `reviews/` (existing Step_8_Independent_Review_Package.md is there), and the S0P names the local project dir, writing the report to `reviews/Step_8_Independent_Review_Report.md` is natural.
+
+However, per user rules, I must confirm my understanding of intent before proceeding. Since I'm in plan mode and the AskUserQuestion tool isn't available, I'll present my understanding briefly and ask the key clarifying question(s) in text, then write the plan.
+
+Actually, given the tool isn't available, I should just present a short clarification in my response text and proceed. But plan mode wants me to ask if ambiguity remains. Let me present 1-2 concise questions in text.
+
+Let me reconsider — is there meaningful ambiguity?
+
+1. Deliverable location: I'll propose `reviews/Step_8_Independent_Review_Report.md`. Low ambiguity, project convention supports it.
+
+2. Test execution during review: The S0P explicitly REQUIRES independently re-running tests (Task F). So the plan must include running them. No real ambiguity — it's mandated. Running pytest creates .pytest_cache (already exists in repo, gitignored probably). This is acceptable read-only-ish. I'll plan to run the prescribed commands.
+
+3. Scope: Full review per S0P, verdict required. Clear.
+
+So actually there's minimal ambiguity. The S0P is very prescriptive. I'll confirm understanding, then write the plan. I'll present a brief confirmation and write the plan file.
+
+Given the user rule about confirming intent, I'll do a short text confirmation. But since I'm to write a plan and notify, I think the cleanest is: present my understanding + the plan, and use NotifyUser to hand off for approval. I should ask the clarifying question about deliverable — but defaulting to reviews/ file is reasonable and I can state that as a decision in the plan, which the user can override on review.
+
+Let me write the plan file now. I need a plan title. Path: `.trae/documents/Step_8_Independent_Review_Execution_Plan.md`.
+
+Let me create the plan. It should be grounded, decision-complete, include verification.
+
+Let me structure the plan:
+
+# Step 8 独立技术审查执行计划
+
+## 1. 意图确认
+基于 S0P 文件，本轮任务 = 独立审查 Step 8 已实现代码，判断是否符合 Step_8_Coding_Contract_v1。只读审查，修复不属本回合。
+
+## 2. 当前状态分析
+- 契约基线 READY FOR CODING
+- 审查包已提交：reviews/Step_8_Independent_Review_Package.md，状态 Independent Review PENDING
+- HEAD 27afc5e，Step 8 全 untracked
+- 已确认的存在：生产模块、测试、fixture
+
+## 3. 审查执行步骤
+按 S0P 任务 A-H 组织 + 报告输出。
+
+Task 0: 准备工作目录 & git 状态快照（只读命令）
+Task A: Coding Contract 一致性 —— 逐条追踪矩阵（16 项）
+Task B: D-STEP8-14 ~ 23 逐项裁决
+Task C: 审查包 5 个待裁决问题
+Task D: 核心模块语义审查 (D1-D9)
+Task E: E2E 与 P0 复核
+Task F: 独立复跑测试（4 条命令）
+Task G: 冻结契约和 OOS 检查
+Task H: Step 7-F 依赖检查
+Task I: 问题分级汇总
+Task J: 最终审查结论 (ACCEPT / ACCEPT WITH NON-BLOCKERS / REQUEST CHANGES / REJECT)
+Task K: 后续动作
+Task L: 可复现证据
+
+## 4. 关键文件清单 (review reference)
+...
+
+## 5. 交付物
+- reviews/Step_8_Independent_Review_Report.md (遵循 §14 A-L 格式)
+
+## 6. 验证
+- 运行测试记录原始输出
+- 冻结文件 mtime/git 检查
+
+## 7. 假设与决策
+- 报告写入 reviews/Step_8_Independent_Review_Report.md
+- 运行 S0P Task F 规定的 4 条测试命令
+- 不修改任何代码/测试/契约
+
+Let me write this plan file. Since it's a review, I'll keep the plan focused but decision-complete.
+
+I'll write to `.trae/documents/Step_8_Independent_Review_Execution_Plan.md`.
+
+Plan ready for your review
+
+Plan approved. Starting execution. Let me set up the todo list and begin with Phase 0 (read-only baseline snapshot).
+
+Environment confirmed. Now recording frozen file mtimes
+Environment confirmed: Python 3.11.7, pytest 8.4.1, openpyxl 3.1.2, rfc8785 OK. Git status confirms all Step 8 artifacts untracked, no M/D. HEAD=27afc5e on master.
+
+Now let me record frozen file mtimes. Let me get mtimes for the frozen files.
+
+Frozen files all ≤ 09-30; Step 8 files all 10-09. Baseline matches review package claims. Now reading production code for Phase A-D.
+
+mtime evidence: All Step 8 new production files are 2026-10-09 (after Step 8 implementation started). All frozen files ≤ 2026-09-30 except `src/eval/run/hash_utils.py` = 2026-10-08 (Step 7-F closure range). The review package claims accuracy/** mtime ≤ 09-30, which matches.
+
+Now let me begin Phase A. I need to read the actual production code files to build the tracking matrix. Let me read all 10 production modules. I'll read them in parallel batches.
+
+Let me read the key modules. This is a lot of reading but necessary. Let me read:
+- src/parsers/base.py, xlsx.py
+- src/facts/mapper.py, store.py, conflict.py
+- src/compute/unit_registry.py
+- src/rules/criterion.py, conclude.py
+- src/ir/builder.py, adapter.py
+
+And the verification side:
+- src/eval/accuracy/data_structures.py (SystemOutput, evaluate_case, RenderedSegment, StructuredTable, TableCell, AnchorDeclaration)
+- src/eval/types.py, enums.py
+- src/cdm/types.py, registry.py
+
+Let me read the production modules first.
+
+Good, I've read the parser, mapper, store, conflict. Let me continue reading compute/unit_registry, rules/criterion, rules/conclude, ir/builder, ir/adapter. Also I need to read the evaluation-side data_structures to verify SystemOutput, and the CDM types/registry for Fact/Criterion/Evaluation.
+
+Let me read the remaining production files.
+
+I've now read the core logic modules. The conclusion logic: the constructor uses keyword-only `defect_host_map`. Note the S0P §D7 expected ConclusionRule aggregation: "任一 unqualified → unqualified；否则任一 not_evaluable → insufficient_evidence；否则全部 qualified → qualified". The implementation does this via `_fold_evaluations`: if any unqualified → unqualified; elif any not_evaluable → insufficient_evidence; else qualified. That matches.
+
+Note: The `_fold_evaluations` returns insufficient_evidence when any is not_evaluable. But wait — the spec expects per-component "全部 qualified → qualified". If a component has only qualified, returns qualified. Good. But what about a component with all not_evaluable with no qualified? -> insufficient_evidence. Correct.
+
+Now let me read IR builder and adapter. Also need cdm/types.py, cdm/registry.py, cdm/domain.py, cdm/id.py to understand Fact, Criterion, Evaluation, SourceRef, Conflict, Conf chandidate, build_fact_id. And the eval-side data_structures.py for SystemOutput/RenderedSegment/StructuredTable/TableCell/AnchorDeclaration and evaluate_case.
+
+Given context usage is high, let me be efficient. I'll read the IR builder, adapter, and the evaluation data structures next. Let me also delegate some sub-checks to agents to protect context.
+
+Actually, this review is deep and I've burned context. Let me continue reading the essential production files (ir/builder, ir/adapter) and the eval data_structures + evaluate_case in validator_framework. Then run the tests.
+
+Given context pressure, I could delegate the deep module semantic checks (D1-D9) to a sub-agent. But the plan requires precise evidence. Let me continue reading the remaining files but be selective — I'll read ir/builder.py, ir/adapter.py, and key parts of eval accuracy data_structures and validator_framework (evaluate_case). Then I'll delegate test-running remain, and the negative-test code reading via a sub-agent explore.
+
+Let me read ir/builder.py and ir/adapter.py now.
+
+Now I'll run the prescribed test suite independently, and delegate deep static verification of the frozen evaluation layer to a sub-agent to protect context
+I've now read all 10 production modules. I have good understanding. Now I need to verify the eval-side frozen structures (data_structures.py: SystemOutput, RenderedSegment, StructuredTable, TableCell, AnchorDeclaration, SystemEvaluation) and evaluate_case in validator_framework to confirm the SystemOutput matches the frozen schema, and evaluate the P0 evaluation logic.
+
+Given context pressure, I'll delegate some deep verification tasks to sub-agents to protect my context:
+1. One agent to read `src/eval/accuracy/data_structures.py`, `src/eval/types.py`, `src/eval/enums.py`, `src/cdm/types.py`, `src/cdm/registry.py`, `src/cdm/id.py` — verify Step 8 modules use frozen structures correctly, and check violations.
+2. Another agent to read `src/eval/accuracy/validator_framework.py` (evaluate_case + 7 P0 functions) and the E2E test file `tests/e2e/test_step8_e2e.py` + negative paths — verify P0 wiring and negative path claims.
+3. Another to run the tests? Tests involve running commands. But I should run them myself to record raw output. Actually I can delegate to general-purpose agent that runs pytest. But the S0P says independent rerun recording raw output. I'll run tests myself via Shell.
+
+Let me delegate the static-reading verification to general-purpose/explore sub-agents while I run the tests myself.
+
+Actually let me be careful about context. I'll run the 4 test commands myself now (they're fast — ~1.4s total), and delegate the deep file reads to explore agents.
+
+Let me run the tests in parallel (not really, sequential on same terminal, but can chain). Actually pytest runs are fast. Let me run them.
+
+Let me run the prescribed test commands.
+
+### Relevant Code Snippets
+1. g:\workspace\zixun4\src\ir\adapter.py:L31-L38
+   — Step 8 IR adapter imports the frozen `eval.accuracy.data_structures` types used to construct system output: `AnchorDeclaration`, `RenderedSegment`, `StructuredTable`, `SystemOutput`, `TableCell`.
+
+2. g:\workspace\zixun4\src\ir\adapter.py:L50-L71
+   — Defines deterministic fact display formatting. Numeric facts use `FactDisplaySpecSnapshot`-style decimal handling with `ROUND_HALF_UP`, relevant to P0-1 value consistency expectations.
+
+3. g:\workspace\zixun4\src\ir\adapter.py:L103-L113
+   — Builds `AnchorDeclaration` objects from rendered refs and tokenizer spans, matching the frozen dataclass fields: `token`, `fact_id`, `char_start`, `char_end`.
+
+4. g:\workspace\zixun4\src\ir\adapter.py:L117-L136
+   — Constructs `TableCell` and `StructuredTable` from report IR table blocks, preserving frozen field names/types including `raw_text`, `fact_id`, `anchor_declarations`, `headers`, and `rows`.
+
+5. g:\workspace\zixun4\src\ir\adapter.py:L139-L188
+   — Main `to_system_output()` mapper converts report IR into frozen `SystemOutput`, including `rendered_segments`, `structured_tables`, `system_reported_issues`, and `system_evaluations`.
+
+6. g:\workspace\zixun4\src\eval\accuracy\data_structures.py:L16-L27
+   — Frozen `AnchorDeclaration` dataclass definition with fields `token`, `fact_id`, `char_start`, `char_end`.
+
+7. g:\workspace\zixun4\src\eval\accuracy\data_structures.py:L32-L63
+   — Frozen `RenderedSegment`, `TableCell`, and `StructuredTable` definitions; `TableCell` includes `anchor_declarations` while retaining legacy `fact_id`.
+
+8. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L469-L492
+   — P0-1 `VALUE.CONSISTENCY` implementation; it does not directly read `FactDisplaySpecSnapshot.decimals`, but consumes binding-stage `value_mismatch` issues produced elsewhere.
+
+9. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L495-L531
+   — Start of P0-2 `TABLE.INTERNAL`; defines exact Decimal cell parsing and numeric-token validation rules.
+
+10. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L533-L627
+   — P0-2 vertical total consistency logic using `TableSpecSnapshot.detail_row_range`, `line_item_cols`, `total_row_index`, and Decimal exact equality.
+
+11. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L889-L931
+   — P0-5 `CONCLUSION.DIRECTION` implementation; reads `SystemOutput.report_ir.conclusion.direction` and compares it case-sensitively to ground truth.
+
+12. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L934-L970
+   — P0-6 `CONCLUSION.COVERAGE` implementation; reads `SystemOutput.report_ir.conclusion.covers` and checks required evaluation IDs are present.
+
+13. g:\workspace\zixun4\src\eval\accuracy\validator_framework.py:L1047-L1161
+   — `evaluate_case()` orchestration for the frozen 7 P0 rules, including applicability, system output checks, rule evaluation dispatch, expected hit handling, and case status aggregation.
+
+14. g:\workspace\zixun4\src\eval\accuracy\__init__.py:L8-L25
+   — Shows `eval.accuracy` re-exports binding/data-structure dependencies used by validator and adapter code.
+
+15. g:\workspace\zixun4\src\cdm\registry.py:L166-L226
+   — Frozen `FactTypeRegistry` API including `register`, `get`, `has`, `validate_fact_type`, and ID-vs-fact-type validation used by evaluation preprocessing.
+
+16. g:\workspace\zixun4\src\cdm\id.py:L62-L102
+   — Frozen Fact ID parsing and construction logic for `fact:<scope>.<instance>.<attribute>` IDs.
+
+17. g:\workspace\zixun4\src\cdm\id.py:L105-L168
+   — Frozen `is_valid_fact_id()` validation path, including format, scope class, instance key, attribute, and fact-type prefix invariant checks.
+
+CMD1 confirmed: 583 passed. Let me verify a few remaining frozen-layer facts directly (RuleStatus export, src/cdm unmodified, P0-1/P0-7 wiring)
+
+CMD1: 583 passed. Confirms record.
+
+The subagent gave useful partial info but not fully all 6 questions (especially Q2 git status for frozen modifications, Q5 RuleStatus export, Q1 field mismatch details, TableCell anchor_declarations default). Let me continue. I need to know:
+- Whether src/cdm and src/eval original files were modified. From git status earlier: the untracked list only includes `src/eval/accuracy/validator_framework.py` (??), `src/eval/run/` (??), and the Step 8 new dirs. Wait — `src/eval/accuracy/validator_framework.py` shows as `??` (untracked). That means it's NEW, not a modification. But the memory/review package says validator_framework.py was created 2026-09-30 (Step 7-E). And `src/eval/accuracy/` other files (binding.py, tokenizer.py, frozen_round.py, data_structures.py) are NOT in the untracked list → they are tracked (committed) and unmodified. But validator_framework.py is untracked?? Interesting. Hmm, actually the git status shows `?? src/eval/accuracy/validator_framework.py`. That's odd — it was Step 7-E deliverable. Maybe Step 7-E files weren't all committed. Regardless, validator_framework.py is untracked NEW. It was created 09-30 (Step 7-E), before Step 8 implementation (10-09). So it is a Step 7-E pre-existing file, not created by Step 8. Its mtime=09-30.
+
+So frozen-layer files were NOT modified by Step 8 — the untracked ones (validator_framework.py, run/) pre-date Step 8 work. Good, consistent with review package.
+
+I need the subagent to answer Q5 (RuleStatus location) and Q1 field mismatch definitively. Also verify src/cdm files aren't modified. Let me check git status for src/cdm and src/eval quickly myself, and the RuleStatus export.
+
+Let me grep for RuleStatus.
+
+src/cdm/*.py are all tracked (committed) and not modified (not in untracked list). src/eval/accuracy/{binding,data_structures,frozen_round,tokenizer}, src/eval/{enums,types,validator} are tracked unmodified. src/eval/accuracy/validator_framework.py and src/eval/run/** are untracked (Step 7-E/F deliverables predating Step 8).
+
+The grep for "RuleStatus" returned nothing in src/? Exit code 1 means no match. Interesting. So `RuleStatus` is NOT defined anywhere in src/! That's why `from eval.accuracy import RuleStatus` fails (P-1). Let me check what the test file imports and grep case-insensitively. Actually git grep is case-sensitive. Let me grep with Grep tool for RuleStatus across the whole repo.
+
+P-1 confirmed pre-existing (RuleStatus defined in `validator_framework.py`, not exported from `eval.accuracy` root; docs Step_7_F_Final_Freeze.md documents it as OOS-8). Running remaining test commands
+
+The P-1 is confirmed: `RuleStatus` is not exported from `eval.accuracy` root package (`src/eval/accuracy/__init__.py`). It's defined in `validator_framework.py` and imported directly from there by `src/eval/run/runner.py` (L23) and tests. The test `test_validator_framework.py:30` does `from eval.accuracy import ... RuleStatus` and fails. Docs `Step_7_F_Final_Freeze.md` confirms this is a PRE-EXISTING Step 7-E export defect, OOS-8. So the P-1 is NOT caused by Step 8. Confirmed.
+
+Now let me verify the P-1 reproduction (CMD4), and run the remaining two test commands (CMD2 Step7F 139, CMD3 E2E 12, CMD4 P-1 error). Let me also run the negative paths. But I should read the E2E test file to verify negative path claims (Direction/Value/ExpectedHit/Uncertainty tests). Let me run the remaining tests and read the E2E test.
+
+Let me run CMD2, CMD3, CMD4.
+
+All 4 commands reproduced exactly as recorded (583/139/12 passed; P-1 → 1 error). Now verifying E2E negative-path claims and fixture
+
+All test results confirmed:
+- CMD1: 583 passed ✓
+- CMD2: 139 passed ✓
+- CMD3: 12 passed ✓
+- CMD4: 1 error, ImportError RuleStatus ✓ (same known P-1)
+
+Now let me verify the negative path claims by reading the E2E test file. Also verify the fixture meta.json (synthetic_business_fixture=true) and check the fixture count against other fixtures. And verify no OOS-15 files in fixture. Let me read the E2E test and the fixture notes/meta.
+
+Given context pressure, let me delegate the E2E negative path reading + F2E P0 verification to the existing explore agent (resume a18174fa). Actually that agent is Explore type. Let me resume it with the E2E negative path verification task. But I want to record actual test code evidence. Let me read the E2E test myself since it's central to Phase E, plus fixture meta.json and the validator P0 functions for P0-5/P0-6 to confirm wiring.
+
+Let me read the E2E test file (it's ~ manageable) and fixture meta.json.
+
+All negative paths verified against actual test code; fixture `meta.json` confirms `synthetic_business_fixture=true`, no registry extensions, no ground_truth/expected_issues (OOS-15 respected). Let me verify the compute directory has no `calculate.py` and that the frozen fixtures dir has no OOS-15 files, then write the report.
+
+I've verified the E2E test covers all negative paths:
+- P0-5 FAIL on direction tamper ✓
+- P0-1 FAIL on value tamper ✓ (value_mismatch), ANCHOR stays PASS ✓, display re-derivation "0.13 mm" ✓
+- P0-7 EXPECTED.HIT hit/not-hit ✓
+- Missing/Conflict uncertainty retained ✓ (mark_missing → not_evaluable → insufficient_evidence → adapter rejects rendering; conflict → policy=manual, candidates, not confirmed, build rejects)
+
+Fixture meta.json: `synthetic_business_fixture: true`, `case_level: bronze`, `registry_extensions: []`, and no ground_truth/expected_issues (OOS-15 respected). Good.
+
+Now I have enough evidence for the review. Let me also quickly verify remaining frozen-module semantic checks I haven't fully confirmed:
+- S8-S-04: fact_id three-segment + invariant. The mapper uses build_fact_id and store validates via is_valid_fact_id + validate_fact_type. Confirmed in store.ingest_candidates.
+- registry has the 6 fact_types: confirmed by FACT_TYPES; they must be registered. Let me verify registry has them (D-STEP8-06, zero registry change). I'll trust tests but let me quickly grep registry.py for the fact types to confirm they're pre-registered (not added).
+
+Actually the review package says registry untouched. I confirmed registry.py is tracked & unmodified (mtime 09-22). The 6 fact_types are building.id etc. which are part of CDM registry. Good.
+
+- P0-1 relationship: The E2E test shows value_mismatch issue type from binding stage. The adapter displays via ROUND_HALF_UP 2 decimals matching fact_display_spec decimals=2. P0-1 consumes value_mismatch from binding. This is consistent (INV-19).
+
+Now, the D-STEP8-19 deviation (Anchor span expansion = display span ∪ intersecting token span). I've read adapter._materialize_parts — it expands span to union with intersecting tokens. This is the deviation D-STEP8-19. It's a real behavioral refinement and is justified (tokenizer tokens may include leading spaces/Chinese prefixes/full-width unit). This is a deviation requiring confirmation but reasonable. It's used to avoid BIND-7/8 false positives, verified by P0-4 PASS.
+
+Now let me assess the D-STEP8-14~23 adjudications and the 5 open questions. Let me consider each against the code I've read:
+
+D-STEP8-14: Mapper located at src/facts/mapper.py. Closure §7 module table has no Mapper row. It's a path declaration. Confirmed mapper.py exists. Informational — accept.
+
+D-STEP8-15: mark_confirmed() added. Verified in store.py. Without it get_confirmed_facts() is always empty. Contract §7 Proposed interface didn't list it. Need confirmation. Is it a violation? It's a new public method not in the frozen contract's Proposed interface list. But it doesn't change CDM semantics (only filled→confirmed). It's an interface supplement. Acceptable as non-blocker, add to Proposed list.
+
+D-STEP8-16: build(fact_set, domain_objects, conclusion) 3 params. Contract §12 shows 2 params; Closure §7 L373 shows 3. Confirmed builder uses 3 params, needs domain_objects. Informational — contract §12 snippet unsynced. Accept.
+
+D-STEP8-17: to_system_output(report_ir, fact_set, *, evaluations=()) keyword-only. Verified. Needed for P0-3 system_evaluations comparison. Optional, doesn't break 2-param call. Acceptable.
+
+D-STEP8-18: conclude(evaluations, *, defect_host_map, rule_id=...). Required keyword-only. Justified — host_component_id grouping must come from frozen L3 field, no naming inference. Contract §10 snippet unsynced. Acceptable.
+
+D-STEP8-19: Anchor span expansion. Real behavioral refinement, verified in adapter. Necessary to match frozen tokenizer token spans, avoids BIND-7/8 false positives. P0-4 PASS. Acceptable but needs contract text note.
+
+D-STEP8-20: ParseResult header_row=None / data_rows semantics. Verified in xlsx.py & base.py docstring. Different from contract comment ("None = 第一行为 header" / "总行数"). Implementation semantics are deterministic and fixture-consistent. This changes the documented (loose) semantics but is a refinement. Acceptable, suggest contract comment revision.
+
+D-STEP8-21: CellRaw param excel_address vs Closure's position. Implemented per Contract §5 (excel_address). Informational. Accept.
+
+D-STEP8-22: tests/facts/test_mapper.py location. Informational — test placement. Accept.
+
+D-STEP8-23: openpyxl==3.1.2 not in requirements.txt. This is a real gap: requirements.txt only lists rfc8785 (Step 7-F scope). Step 8 is first runtime import of openpyxl. Env has it installed. This is a dependency-declaration gap. Major? The S0P asks reviewer to judge. It doesn't break function now, but is a reproducibility gap (Fresh environment wouldn't have openpyxl declared). This is arguably a Major-ish / Minor issue. I'd classify it as Minor (dependency reproducibility gap) — needs declaration but doesn't break current contract execution. Actually it could be considered a non-blocking issue requiring action (add to requirements or separate file).
+
+Now severity:
+- D-STEP8-14,21,22: Informational, accept.
+- D-STEP8-16,20: contractual text snippet unsync — Informational/minor, contract text revision.
+- D-STEP8-15,17,18,19: needed interface/behavior refinements — accept as non-blockers, contract text sync recommended.
+- D-STEP8-23: dependency declaration gap — Minor but actionable.
+
+None of these change frozen contract semantics or break correctness/determinism/traceability. No Blocking issues.
+
+Are there any real issues I should flag beyond the deviations? Let me consider:
+- The `_fold_evaluations` returns "insufficient_evidence" when any not_evaluable, but spec D-STEP8-09 says "否则任一 not_evaluable → insufficient_evidence；否则全部 qualified → qualified". The per-component and global logic matches. Good.
+- conflude empty evaluations → missing. Good.
+- Adapter rejects rendering missing value (ValueError) — good, conservative.
+- Criterion gates: review_status != confirmed → not_evaluable; fact.status != filled → not_evaluable; value None → not_evaluable; quantity_kind mismatch → not_evaluable; unknown unit → not_evaluable. Good, matches contract §10.
+- Unit registry: mm/m → length, Decimal conversion. Good.
+- No calculate.py (compute only unit_registry). Confirmed — src/compute has only __init__.py and unit_registry.py. Good, D-STEP8-07 respected.
+- No resolve_conflict method. Confirmed absent from store.py. Good.
+- No Docx/PDF/LLM/Pipeline. Confirm src has no such modules. The Step 8 modules are the 10 listed. Good.
+- No ground_truth/expected_issues/known_issues files in fixture. Confirmed (only inspection.xlsx, meta.json, notes.md). Good.
+- No modification to existing 7 fixtures: only case_step8_defect_v1 new. Good.
+
+Frozen contract modification check: docs 02/03/04/05/07 mtime ≤ 09-30, registry mtime 09-22, accuracy mtime ≤09-30. Untracked Step 8 files all 10-09. So no frozen modification. Good.
+
+Now the P0 evidence summary:
+- P0-1 VALUE.CONSISTENCY: PASS positive, FAIL negative (value_mismatch) ✓
+- P0-2 TABLE.INTERNAL: NOT_EVALUABLE (no enabled checks, no issues) ✓
+- P0-3 LOGIC.CONSISTENCY: PASS positive (system_evaluations compare) 
+- P0-4 ANCHOR.BINDING: PASS positive, stays PASS on value tamper
+- P0-5 CONCLUSION.DIRECTION: PASS positive, FAIL negative
+- P0-6 CONCLUSION.COVERAGE: PASS positive
+- P0-7 EXPECTED.HIT: PASS hit, FAIL not-hit
+
+Wait, P0-3 LOGIC.CONSISTENCY PASS and P0-4 ANCHOR.BINDING PASS — need to verify how. P0-3 compares system_evaluations against expected_evaluations. P0-4 checks anchor binding. The E2E test asserts these PASS. But is there negative evidence for P0-3 or P0-4? The S0P Task E1 notes to check if any rules were "被意外跳过的验证规则". Both P0-3 and P0-4 pass with real assertions in evaluate_case (not skipped). But there's no negative test for P0-3 or P0-4 failure in the E2E. That's a coverage note — P0-3/P0-4 have positive PASS evidence but only weak/absent negative evidence within Step 8 E2E. However, frozen P0-3/P0-4 rules have their own unit tests in Step 7-E (test_validator_framework.py, though P-1 blocks that file). Hmm. Actually the P0 rules themselves are Step 7-E frozen and were validated in Step 7-E acceptance.
+
+For the review, I note: 6 P0 have positive PASS, P0-2 NOT_EVALUABLE, P0-5 & P0-1 & P0-7 have negative FAIL evidence; P0-3 & P0-4 have negative evidence only indirectly. Let me check if there's a negative test for P0-3/P0-4 in the Step 8 tests. Actually I should be accurate. Let me check tests for anchor binding negative — the adapter creates anchors; the P0-4 negative would require a wrong anchor to be detected. There's no explicit negative anchor test in E2E. This is a coverage observation (Informational/Minor), not a defect.
+
+Let me also verify the D-STEP8-15 mark_confirmed concern: is the contract §7 Proposed interface truly missing mark_confirmed? The contract §7 lists methods: ingest_candidates, get_confirmed_facts, get_all_facts, get_conflicts, mark_missing, mark_conflict, mark_rejected. Indeed mark_confirmed is NOT in the Proposed interface. So adding it is a deviation (an added public method). It's a supplement required for the pipeline to work (get_confirmed_facts would be empty). This is reasonable but should be confirmed as an acceptable addition to the Proposed list.
+
+Now, is there any Blocking/Major issue? Let me think about D-STEP8-23 openpyxl. In current env it works. Not blocking.
+
+Is there any actual contract violation that would be Blocking? Let me reconsider the ConclusionRule global aggregation vs contract §11. Contract §11 says:
+1. 逐构件聚合: 任一 unqualified → 构件 unqualified; 否则任一 not_evaluable → insufficient_evidence; 否则全部 qualified → qualified.
+2. 全局方向: 任一构件 unqualified → unqualified; 否则任一 not_evaluable → insufficient_evidence; 否则全部 qualified → qualified.
+
+But the implementation `_fold_evaluations` for a component returns "unqualified" if any unqualified, "insufficient_evidence" if any not_evaluable, else "qualified". This maps: within a component having mixed [qualified, not_evaluable] → insufficient_evidence. Correct per contract. And mixed [qualified, unqualified] → unqualified. Correct. 
+
+Global uses component_statuses where each is one of qualified/insufficient_evidence/unqualified. 任一 unqualified → unqualified; elif any insufficient_evidence → insufficient_evidence; else qualified. Correct.
+
+But wait — there's a subtle issue. When there are QUALIFIED components only → qualified. When there's a component with all qualified → component qualified. Good. What about empty evaluations? → missing. Good.
+
+One potential concern: The contract §11 expects covers[] = 全部 6 条 evaluation ids. The builder does covers = sorted(conclusion.input_evaluation_ids). conclusion.input_evaluation_ids = [ev.evaluation_id for ev in evaluations]. In E2E, evaluations only includes defect.width evaluations (filtered), which is 6. So covers = 6 eval-D00X-width ids. The trusted expected required_evaluation_ids = EVAL_IDS = 6 width ids. Consistent. Good.
+
+But note: evaluations in `_run_e2e` are only `defect.width` facts. So conclusion covers 6 width evaluations only, not length/pattern. That matches trusted required_evaluation_ids (6 width). Fine for this slice.
+
+Everything is consistent. I'm confident: No Blocking/Major issues. ACCEPT WITH NON-BLOCKERS.
+
+Actually, let me reconsider openpyxl dependency (D-STEP8-23). Is it Major? It affects reproducibility on a fresh environment. But Step 8 code is entirely new/untracked and not yet committed/installed anywhere. The dependency issue is a real gap but low impact for current acceptance (env has it). I'll classify Minor with recommended action.
+
+Also the P-1 (test_validator_framework.py ImportError) is pre-existing (Step 7-E export defect), OOS-8, and the proper fix is not to touch it. It does mean tests/eval/test_validator_framework.py can't be run as a whole. But that's a pre-existing gap, not Step 8's fault. The full regression command appropriately ignores the file per the contract's OOS-8 exclusion. Non-blocking.
+
+I have enough to write the report. Given context pressure, I should now write the final report to reviews/Step_8_Independent_Review_Report.md.
+
+Let me verify one more thing about P0-3 and P0-4 to be accurate in the report — whether they're genuinely evaluated (not skipped). The E2E asserts applicable_rule_count=7 and rule_statuses all set. So all 7 evaluated. P0-3/P0-4 = PASS determined by real logic. I'll note negative-coverage is weaker for P0-3/P0-4.
+
+Let me now also double-check the conclusion for P0-3: system_evaluations derived from `evaluations` passed to to_system_output. In E2E, evaluations = 6 width evaluations. system_evaluations = 6 entries. expected_evaluations trusts the same 6. P0-3 compares → PASS. Good.
+
+Now write the report. Let me produce the full report following §14 A-L format. I'll create reviews/Step_8_Independent_Review_Report.md.
+
+Let me be thorough but concise. Mark todos progressively. Let me update todos first, then write report.
+
+All frozen/OOS bounds confirmed. I now have complete evidence across all phases. Writing the final review report
+Confirmed:
+- src/compute has only unit_registry.py (no calculate.py) ✓
+- No OOS-15 files (ground_truth/expected_issues/known_issues) anywhere under fixtures ✓
+- case_step8_defect_v1 contains only the 3 files ✓
+- The 7 pre-existing fixture dirs untouched (case_bronze..., etc.) ✓
+
+I have all evidence needed. Let me now write the comprehensive review report to reviews/Step_8_Independent_Review_Report.md.
+
+Let me update the todos to reflect progress and then write the report.
+
+The report is written. Let me mark the final todo complete and provide the final response to the user.
+
+Let me update todos.
+
+Step 8 独立技术审查已完成，全程只读（未修改任何源码/测试/冻结契约）。
+
+## 审查结论：ACCEPT WITH NON-BLOCKERS
+
+完整审查报告见 [Step_8_Independent_Review_Report.md](computer://g:\workspace\zixun4\reviews\Step_8_Independent_Review_Report.md)（严格遵循 S0P §14 A-L 结构）。
+
+### 核心证据
+- **独立复跑与实施者记录完全一致**：全量 583 / Step7-F 139 / E2E 12 passed；P-1 复现为同一预存 `ImportError: RuleStatus`（`src/eval/accuracy/__init__.py` 未导出，`Step_7_F_Final_Freeze.md` 已定性 OOS-8 / 非本次回归）。
+- **Coding Contract 核心语义逐条有真实证据**（16 项矩阵无 FAIL）：Parsing≠Semantic Interpretation、FactStore 状态机、Conflict 仅记录无 `resolve_conflict`、统计 Compute=∅（`src/compute/` 仅 unit_registry.py，无 calculate.py）、Criterion 五重闸门、ConclusionRule 聚合、IR/Adapter 与冻结 data_structures 匹配。
+- **负向路径真实有效**：P0-1/P0-5/P0-7 失败、缺失/冲突不确定性保留，在 [test_step8_e2e.py](file:///g:/workspace/zixun4/tests/e2e/test_step8_e2e.py) 显式验证。
+- **冻结/OOS 零越界**：mtime + git status 双证据独立一致；未改冻结 docs/registry/accuracy/run；未引入 OOS 项；fixture 仅 `case_step8_defect_v1`（meta.json 明示 synthetic、无 ground_truth/expected_issues）。
+- **10 项偏差（D-STEP8-14~23）全部为 Informational/Minor 非阻塞**，均不改已批准契约语义。
+
+### 注意点
+- `6 项 PASS + TABLE.INTERNAL NOT_EVALUABLE` **不等于**七项全通过——该覆盖边界为当前契约明确接受，不阻塞验收，但不得将 P0-2 NOT_EVALUABLE 计作正向通过。
+- 3 项 Minor 建议：① 将 `openpyxl` 补录依赖声明（复现性缺口）；② 固化 D-STEP8-19 的 anchor span 语义注记；③ 为 P0-3/P0-4 补显式负例。
+
+本审查不自行宣告 FROZEN、不修改契约状态；FROZEN 升级与契约文本修订须另起独立 Session 批准。
