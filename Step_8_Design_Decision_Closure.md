@@ -1,11 +1,11 @@
 # Step 8 Design Decision Closure Report
 
-> **日期**：2026-10-08（原始）/ 2026-10-09（Step 8 Cross-Document Consistency Repair）
-> **前置**：Step 8 Design Discovery ✅（COMPLETE）→ Decision Closure → Cross-Document Consistency Repair
-> **状态**：**NEEDS DECISION**（D-STEP8-02 / 03 / 06 / 07 / 09 为 OPEN；D-CONFLICT-001 未解决 → Coding-Blocking）
+> **日期**：2026-10-08（原始）/ 2026-10-09（Cross-Document Consistency Repair + Fixture Design Sprint 关闭）
+> **前置**：Step 8 Design Discovery ✅（COMPLETE）→ Decision Closure → Cross-Document Consistency Repair → Fixture Design Sprint（缺陷判定切片方向，2026-10-09）
+> **状态**：**READY FOR CODING**（D-STEP8-02 / 03 / 06 / 07 / 09 已证据化 CLOSED；D-STEP8-13 处置决议＝最小路径不激活、保持 OPEN 且不构成 Coding-Blocking；D-CONFLICT-001 保持 OPEN / Deferred / 非当前路径（未宣告解决）——9/9 门禁 PASS，见 §14）
 > **本 Session 不创建任何生产代码**
 > **Frozen Docs 不做任何修改**（02/03/04/05/07 全部保持原样）
-> **Registry 不修改**（`src/cdm/registry.py` 保持原样；任何 FactType 均为 Proposed）
+> **Registry 不修改**（`src/cdm/registry.py` 保持原样；本切片零 Registry 变更）
 
 ---
 
@@ -34,9 +34,9 @@
 ### Candidate A 当前状态
 
 ```text
-PROPOSED → CLOSED（本 Session 证据化后正式采纳）
-但 Step 8 Design Status = NEEDS DECISION（关键决策 OPEN）
-Candidate A 的目标方向保持不变，但需要 Step 8 Coding Round 前补齐 OPEN 决策
+PROPOSED → CLOSED（证据化后正式采纳）
+Step 8 Design Status = READY FOR CODING（Fixture Design Sprint 后关闭全部关键决策；见 §14）
+Candidate A 方向保持；配合缺陷判定切片（决策报告结论 B）
 ```
 
 ---
@@ -46,28 +46,27 @@ Candidate A 的目标方向保持不变，但需要 Step 8 Coding Round 前补�
 | Decision | Status | Decision 内容 | Evidence |
 |---|---|---|---|
 | D-STEP8-01 Vertical Slice Scope | **CLOSED** | Step 8 = M1(parsers/xlsx + facts/store) + M2(compute + rules + conclude) + M3(ir/builder + ir/adapter)，但只做**一个最小真实 Excel 业务案例**的完整贯通 | 02 §17.2 + Discovery §10 + OOS 完整排除了 Pipeline/LLM/Template |
-| D-STEP8-02 Fixture Source | **OPEN** | workspace 中无任何真实 Excel/CSV 文件（Pre-Check 0a Glob 确认）。**需要人工构造 business fixture**，但 fixture 设计（sheet/header/字段/单位/fact_type 映射）尚待完成 | Pre-Check 0a：Glob `g:\workspace\zixun4\**\*.xlsx` → 0 个文件 |
-| D-STEP8-03 RawSource → Fact Responsibility | **CLOSED（结构）+ OPEN（确定性程度）** | Parser/Mapper/Store 三层分离结构已明确（Parsing ≠ Semantic Interpretation 铁律）。但 Mapper 是否能完全确定性（Q1-Q6）无法在没有真实 fixture 的情况下证据化 | Pre-Check 0a 无 fixture；Pre-Check 0b 确认 Adapter 部分可确定性；§四 Q1-Q6 需 fixture 验证 |
-| D-STEP8-04 Fact Store 状态机 | **CLOSED**（枚举继承） | FactStore 严格继承 CDM §15，**禁止发明非法 status**：CandidateFact（transient，非 CDM Fact）→ 入库后成为 `status=filled, review_status=pending` 的合法 Fact（types.py 默认构造）→ 经 Store 闸门可转入 confirmed（review_status=confirmed）/ missing（value=None）/ conflict / rejected。**`superseded` 只属于 revision 更正链（§15.5），不是 Conflict 裁决结果**；Conflict 裁决后的持久化转换未定义 → D-STEP8-13（OPEN）。**不存在 `pending` / `resolved` 作为 Fact.status**（registry.py FACT_STATUSES） | CDM §15 + §15.5 revision 链 + registry.py FACT_STATUSES + types.py Fact 默认值 |
-| D-STEP8-05 Conflict resolution | **CLOSED（policy）/ OPEN（裁决后转换）** | 第一阶段必须 manual；`Conflict.resolution_policy='manual'`（CDM §36 冻结）。Store 接口 `resolve_conflict(fact_id, resolution_value, resolver_id)`（**Proposed Interface**：键 = `Conflict.fact_id`，冻结 CDM 无 `conflict_id` 字段）。裁决后如何生成合法 Fact 属 OPEN（D-STEP8-13）。不实现自动裁决 | CDM §36 + project_memory hard constraint + types.py Conflict（字段为 `fact_id` / `resolved_by` / `resolution`） |
-| D-STEP8-06 First Fact Types | **OPEN** | 依赖 fixture 字段。registry 已注册 15+ 类型（component.concrete_strength、defect.width 等），但 fixture 实际用哪些尚待 fixture 设计 | D-STEP8-02 |
-| D-STEP8-07 First Compute set | **OPEN** | 依赖 fixture 的数据类型。预候选：average / max / min（统计量）；但需确认 fixture 是否有一组同类型数据需要聚合 | D-STEP8-02 |
+| D-STEP8-02 Fixture Source | **CLOSED** | workspace 无真实 Excel（Pre-Check 0a）→ 人工构造 synthetic_business_fixture。**已创建**：`tests/eval/fixtures/case_step8_defect_v1/`（缺陷判定切片）——`inputs/inspection.xlsx`（单 sheet「构件缺陷检查记录」7×6：header + 6 数据行；B01 / K001-K003 / D001-D006）+ `meta.json`（synthetic_business_fixture=true, case_level=bronze, registry_extensions=[]）+ `notes.md`（映射 / Q1-Q6 / 显示策略） | Fixture Design Sprint Brief v2 §2/§8（8/8 条件已执行）；openpyxl 回读验证 7×6；文件实际存在 |
+| D-STEP8-03 RawSource → Fact Responsibility | **CLOSED（结构 + 确定性）** | Parser/Mapper/Store 三层分离结构明确（Parsing ≠ Semantic Interpretation 铁律）。Mapper 确定性程度经 fixture 验证 = **结果 A（全部确定性）**：Q1 列名精确匹配 6/6；Q2 行级 context 导出 L3 归属（源自 `source_refs` 位置，非语义推断）；Q3 无同义字段（受控同义词表不建立、延后）；Q4 无不可映射字段；Q5 确定性规则集 = 列名精确匹配 + 行级 context 导出 + 单位取列头声明 + 实例 key＝单元格文本；Q6 本 fixture 内无不确定性（合并单元格/多级表头/跨行拼接为后续工作，边界如实声明） | Sprint Brief v2 §6；fixture `notes.md` §6（Q1-Q6 正式回答）；结果 A 判定 |
+| D-STEP8-04 Fact Store 状态机 | **CLOSED**（枚举继承） | FactStore 严格继承 CDM §15，**禁止发明非法 status**：CandidateFact（transient，非 CDM Fact）→ 入库后成为 `status=filled, review_status=pending` 的合法 Fact（types.py 默认构造）→ 经 Store 闸门可转入 confirmed（review_status=confirmed）/ missing（value=None）/ conflict / rejected。**`superseded` 只属于 revision 更正链（§15.5），不是 Conflict 裁决结果**；Conflict 裁决后的持久化转换未定义 → D-STEP8-13（OPEN；处置决议：第一版不激活，见 Sprint Brief v2 §7）。**不存在 `pending` / `resolved` 作为 Fact.status**（registry.py FACT_STATUSES） | CDM §15 + §15.5 revision 链 + registry.py FACT_STATUSES + types.py Fact 默认值 |
+| D-STEP8-05 Conflict resolution | **CLOSED（policy）/ OPEN（裁决后转换）** | 第一阶段必须 manual；`Conflict.resolution_policy='manual'`（CDM §36 冻结）。裁决后如何生成合法 Fact 属 OPEN（D-STEP8-13；处置决议：第一版不提供 `resolve_conflict`，见 Sprint Brief v2 §7）。不实现自动裁决 | CDM §36 + project_memory hard constraint + types.py Conflict（字段为 `fact_id` / `resolved_by` / `resolution`） |
+| D-STEP8-06 First Fact Types | **CLOSED** | 第一版采用集 = 本切片 6 个 fact_type：`building.id` / `component.id` / `defect.id` / `defect.width` / `defect.length` / `defect.pattern`——**全部已注册，零 Registry 变更**（registry.py L272-294）。无任何 Proposed / 未注册类型；无计算输出类型 | Sprint Brief v2 §3；`registry.has()` 6/6 True（回读验证）；决策报告结论 B |
+| D-STEP8-07 First Compute set | **CLOSED** | 第一版统计 Compute set = **∅（明确排除）**：最小判定链 = 逐缺陷比较（Criterion）+ Evaluation 聚合（ConclusionRule，非统计）；任何统计/聚合输出 fact_type 未注册 → 不引入。唯一 compute 模块 = `src/compute/unit_registry.py`（mm→length、m→length）。`calculate.py` / `compute_statistic()` 第一版不创建。缺失/冲突语义 = N/A（无统计输入聚合）。S8-S-06 重化为单位换算/量纲一致性 | Sprint Brief v2 §5；registry.py 实际注册集 |
 | D-STEP8-08 First Criterion operators | **INHERITED** | 直接引用 CDM §25.1。Criterion.rule 字段的 operator 取值（>、>=、<、<=、==、between）由冻结 CDM 定义 | CDM §25.1 |
-| D-STEP8-09 First ConclusionRule | **OPEN** | 依赖 fixture 的业务判定逻辑。预候选：单项合格 → 合格；任一不合格 → 不合格；missing → insufficient evidence | D-STEP8-02 |
+| D-STEP8-09 First ConclusionRule | **CLOSED** | 第一版 Criterion = `criterion-step8-defect-width-01`（`defect.width <= 0.30` mm → qualified；> 0.30 → unqualified；**0.30 为本切片合成测试参数，非规范限值**）。ConclusionRule = `step8_defect_slice_v1`：逐构件按 `host_component_id` 聚合（任一 unqualified → 构件 unqualified；否则任一 not_evaluable → insufficient_evidence；否则 qualified）→ 全局同逻辑（空输入 → missing）；unqualified 优先；`covers[]` = 全部 6 条 evaluation ids。预期全局 direction = "unqualified"。direction 值域（切片声明）：qualified / unqualified / insufficient_evidence / missing | Sprint Brief v2 §4；fixture `notes.md` §4 |
 | D-STEP8-10 Minimal Report IR output | **INHERITED** | 直接引用 04_REPORT_IR.md 全文 Schema。最小合法 IR = Document(version=0.3.1.1) + Section(semantic="inspection_result") + Table + Paragraph | 04_REPORT_IR.md |
 | D-STEP8-11 SystemOutput projection | **CLOSED（Adapter 结构）** | IR→SystemOutput Adapter 需承担**IR Materialization**（Ref + Lit → 显示文本 + anchors 转换）。这不是 DOCX Renderer（OOS），而是 Step 8 确定性投影 | Pre-Check 0b 字段级分析 |
 | D-STEP8-12 E2E success criteria | **CLOSED** | 12 条 S8-S-01 ~ S8-S-12（见 §八） | Discovery SC-1~SC-5 细化 |
-| D-STEP8-13 Conflict 人工裁决 → Fact 状态转换 | **OPEN**（新增） | 冻结 CDM 未定义「冲突候选经人工裁决后」的完整状态转换。**不得**假定原候选 Fact 转 `superseded`（§15.5 明确 conflict 与 superseded 不得混用）；**不得**伪造 revision / `supersedes`。需独立设计决策或 `03` 授权 | CDM §15.5「`conflict` 是横向来源分歧，`superseded` 是纵向版本更迭，二者不得混用」+ §34 Conflict 数据结构只有 `resolved_by` / `resolution` |
-| D-CONFLICT-001 Component–Sample 关联 | **OPEN（Design Conflict，Coding-Blocking）** | `component.concrete_strength` 假设一个 Component 一个强度值；GB/T 50081-2019 要求每构件 3 个平行试块。现有 CDM 无法无歧义表达 sample→component 归属（见 §10.2 证据化分析） | registry.py 实际注册集（仅 `sample.id`）+ src/cdm/domain.py 实际类（无 Sample）+ CDM §17/§23/§24 仅为概念骨架 |
+| D-STEP8-13 Conflict 人工裁决 → Fact 状态转换 | **OPEN（处置决议：最小路径不激活；非 Coding-Blocking）** | 处置决议（Sprint Brief v2 §7）：最小路径不激活 Conflict 分支与 `resolve_conflict`——第一版 FactStore **不提供**该入口（避免发明「裁决后转换」）；`mark_conflict` 仅记录 candidates（resolved_by / resolution 保持 None），不构成裁决后转换；不假定、不实现、不伪造 conflict → superseded / revision / supersedes（CDM §15.5：二者不得混用）；S8-S-05 覆盖 candidate→filled/pending→confirmed / missing / rejected + conflict 记录，裁决转换验证延后。D-STEP8-13 保持 OPEN，不构成当前路径 Coding-Blocking（门禁 8 组成部分） | Sprint Brief v2 §7；CDM §15.5 |
+| D-CONFLICT-001 Component–Sample 关联 | **OPEN（Deferred / 非当前路径，未解决）** | `component.concrete_strength` 假设一个 Component 一个强度值；GB/T 50081-2019 要求每构件 3 个平行试块。现有 CDM 无法无歧义表达 sample→component 归属（见 §10.2 证据化分析）。**2026-10-09 设计决策（结论 B）**：选定合规最小替代切片（缺陷判定切片）不依赖该关联 → 冲突保留 OPEN / Deferred / 非当前路径，未宣告解决；原混凝土场景 Deferred | 决策报告 `Step_8_Sample_Component_Relation_Design_Decision.md` §3/§4/§5；registry.py 实际注册集（仅 `sample.id`）+ src/cdm/domain.py 实际类（无 Sample）+ CDM §17/§23/§24 仅为概念骨架 |
 
 ### 决策分布
 
 ```text
 INHERITED:       2  (D-STEP8-08, D-STEP8-10)
-CLOSED:          5  (D-STEP8-01, D-STEP8-04, D-STEP8-05, D-STEP8-11, D-STEP8-12)
-CLOSED + OPEN:   1  (D-STEP8-03：三层结构 CLOSED / Mapper 确定性程度 OPEN)
-OPEN:            5  (D-STEP8-02, D-STEP8-06, D-STEP8-07, D-STEP8-09, D-STEP8-13)
-Design Conflict: 1  (D-CONFLICT-001, Coding-Blocking)
+CLOSED:         10  (D-STEP8-01, 02, 03, 04, 05, 06, 07, 09, 11, 12)
+OPEN:            1  (D-STEP8-13：处置决议＝最小路径不激活，保持 OPEN、非 Coding-Blocking)
+Design Conflict: 1  (D-CONFLICT-001：OPEN / Deferred / 非当前路径（未解决）；当前路径无 Coding-Blocking Conflict)
 ```
 
 ---
@@ -89,7 +88,7 @@ Design Conflict: 1  (D-CONFLICT-001, Coding-Blocking)
 | 9 | Unit Tests | `tests/parsers/`, `tests/facts/`, `tests/compute/`, `tests/rules/`, `tests/ir/` | 各模块单元测试 |
 | 10 | Integration Test | `tests/integration/` | Excel → FactSet → Evaluation → IR 集成测试 |
 | 11 | E2E Test | `tests/e2e/` | 真实 Excel → SystemOutput → Step 7-E evaluate_case() 消费 |
-| 12 | synthetic_business_fixture | `tests/eval/fixtures/<case_id>/inputs/inspection.xlsx` | 首份 fixture（待 fixture 设计完成后创建） |
+| 12 | synthetic_business_fixture | `tests/eval/fixtures/case_step8_defect_v1/inputs/inspection.xlsx` | 首份 fixture（**已创建**：缺陷判定切片，7×6；见 §6 / §2 矩阵 D-STEP8-02） |
 
 ### Out of Scope（必须排除的）
 
@@ -144,32 +143,32 @@ Parser 只做确定性的文件结构发现：
 
 Mapper 作为独立层是推荐架构方向——这是 Parsing ≠ Semantic Interpretation 的自然延伸：Parser 产出 CellRaw（有位置有原始值但无语义），Mapper 把 CellRaw 映射到 CandidateFact（有 fact_id 有 fact_type）。
 
-但 **Mapper 是否能完全确定性**必须通过第一份 Excel fixture 的真实结构验证后才能冻结。当前 workspace 无任何真实 Excel，无法实证。
+但 **Mapper 是否能完全确定性**必须通过第一份 Excel fixture 的真实结构验证后才能冻结。**[2026-10-09 更新：fixture `case_step8_defect_v1` 已创建并验证 → Q1-Q6 回答 = 结果 A（全部确定性）→ D-STEP8-03 CLOSED（结构 + 确定性）；原「当前 workspace 无任何真实 Excel，无法实证」状态已解除。]**（见 §2 矩阵 / Sprint Brief v2 §6 / fixture `notes.md` §6）
 
-#### 待 fixture 验证的 6 个问题（Pre-Check 0a 扩展）
+#### Q1-Q6（**已由 fixture 验证 = 结果 A**，Pre-Check 0a 扩展）
 
-| # | 问题 | 预期答案 | 影响 |
+| # | 问题 | 验证结果（2026-10-09） | 影响（本 fixture 下） |
 |---|---|---|---|
-| Q1 | Excel 列名是否足够稳定，可以直接匹配到 fact_type registry？ | **待 fixture** | 如果列名混乱 → 不能完全 deterministic |
-| Q2 | 是否需要 sheet / row / column context 才能正确映射？ | **待 fixture** | 如果需要上下文 → Mapper 更复杂但仍可确定性 |
-| Q3 | 是否存在同义字段（如"混凝土强度"/"抗压强度"/"砼强度"都指向同一 fact_type）？ | **待 fixture** | 如果有同义 → 建立受控同义词表，仍然 deterministic |
-| Q4 | 是否存在无法无歧义映射的字段？ | **待 fixture** | 如果存在 → 记录为 Design Finding，可能需要后续引入有限 LLM 或人工介入 |
-| Q5 | 哪些映射属于确定性规则（列名精确匹配、受控词表匹配、位置规则）？ | **待 fixture** | 这部分可以冻结为 deterministic |
-| Q6 | 哪些情况属于不确定性问题（需要语义理解）？ | **待 fixture** | 这部分不能硬做，需要记录为后续工作 |
+| Q1 | Excel 列名是否足够稳定，可以直接匹配到 fact_type registry？ | **是**——6 个固定列头逐一精确匹配（Sprint Brief v2 §3） | 列名精确匹配（已冻结） |
+| Q2 | 是否需要 sheet / row / column context 才能正确映射？ | **需要行级 context**——同行 6 列联合用于 L3 归属与实例分组；来源 = `source_refs` 位置（结构信息，非语义推断） | 位置规则（已冻结） |
+| Q3 | 是否存在同义字段（如"混凝土强度"/"抗压强度"/"砼强度"都指向同一 fact_type）？ | **无**（每列唯一含义）；受控同义词表**不建立**（延后到出现真实变体） | 同义词表（未启用，延后） |
+| Q4 | 是否存在无法无歧义映射的字段？ | **无**——6 列全部一行一义 | 无 Design Finding |
+| Q5 | 哪些映射属于确定性规则（列名精确匹配、受控词表匹配、位置规则）？ | **(a) 列名精确匹配；(b) 行级 context 导出 L3 归属与分组；(c) 原始单位取自列头声明；(d) 实例 key = 单元格文本** | 已冻结为 deterministic |
+| Q6 | 哪些情况属于不确定性问题（需要语义理解）？ | **本 fixture 内无**；边界如实声明：合并单元格 / 多级表头 / 跨行拼接不在本 fixture 内（后续工作） | 无（边界已声明） |
 
-#### 三种可能结果（取决于 fixture）
+#### 三种可能结果（**裁定：结果 A**）
 
-**结果 A：全部 Q1-Q6 回答为"确定性足够"**
+**结果 A：全部 Q1-Q6 回答为"确定性足够"** ✅ **已采用（2026-10-09）**
 - Mapper 可以冻结为完全确定性层
 - D-STEP8-03 = CLOSED（结构 + 确定性）
 - Candidate A 的 Zero-LLM 目标保持不变
 
-**结果 B：大部分可以确定性，但有少量需要规则增强**
+**结果 B：大部分可以确定性，但有少量需要规则增强**（未触发）
 - Mapper 可以冻结为确定性层 + 受控同义词表 + 位置规则
 - 仍然 Zero-LLM
 - D-STEP8-03 = CLOSED（结构）+ OPEN（细节规则）
 
-**结果 C：存在无法确定性映射的字段**
+**结果 C：存在无法确定性映射的字段**（未触发）
 - 记录为 Design Finding
 - D-STEP8-03 = CLOSED（结构）+ OPEN（部分字段映射）
 - **影响 Candidate A 的 Zero-LLM 目标**——可能需要 Step 8.5 引入有限 LLM 或人工介入层
@@ -190,8 +189,9 @@ CellRaw → Mapper → CandidateFact（transient，非 CDM Fact，不带合法 s
     =confirmed)                     (resolution
                                     _policy=manual)
                                     
-Conflict 人工裁决 → resolve_conflict(fact_id, resolution_value, resolver_id)（Proposed Interface）
-  → 仅记录 Conflict.resolved_by / Conflict.resolution（人工裁决，policy=manual）
+Conflict 记录 → mark_conflict(fact_id, candidates)（第一版**仅记录**；policy=manual）
+  → resolved_by / resolution 保持 None；不构成「裁决后转换」
+  → resolve_conflict 第一版**不提供**（D-STEP8-13 处置决议：最小路径不激活）
   → 裁决后如何生成合法 Fact（status / revision / supersedes）在冻结 CDM 中未定义
     → **D-STEP8-13 OPEN**；不得假定原候选转 superseded
 
@@ -203,11 +203,11 @@ Revision 更正（与 Conflict 无关）→ supersedes 链（CDM §15.5）
 - `pending` 是 `review_status` 的合法值，**绝不是** `Fact.status` 的合法值（registry.py FACT_STATUSES）
 - `resolved` **不存在**于 `Fact.status` 枚举
 - CandidateFact 是 Mapper→Store 之间的**瞬态桥接对象**，不得伪装成带非法 status 的 CDM Fact
-- **不得**假定 Conflict 人工裁决后原候选 Fact 自动变为 `superseded`（CDM §15.5：`conflict` 是横向来源分歧、`superseded` 是纵向版本更迭，「二者不得混用」）。裁决后的持久化转换未定义 → D-STEP8-13（OPEN）
+- **不得**假定 Conflict 人工裁决后原候选 Fact 自动变为 `superseded`（CDM §15.5：`conflict` 是横向来源分歧、`superseded` 是纵向版本更迭，「二者不得混用」）。裁决后的持久化转换未定义 → D-STEP8-13（OPEN；处置决议：最小路径不激活，见 Sprint Brief v2 §7）
 
 ### CandidateFact 与 FactStore 接口（**Proposed Interface** — 尚未实现）
 
-以下对象/接口是 Mapper 与 Fact Store 之间的**设计提案**；当前 workspace 中不存在对应实现（无 `src/facts/`）。在任何 Coding 之前必须先关闭 D-STEP8-13。
+以下对象/接口是 Mapper 与 Fact Store 之间的**设计提案**；当前 workspace 中不存在对应实现（无 `src/facts/`）。D-STEP8-13 处置决议：最小路径不激活 Conflict 裁决转换，`resolve_conflict` 第一版**不提供**（见 §2 / Sprint Brief v2 §7）。
 
 ```python
 @dataclass
@@ -232,13 +232,11 @@ class FactStore:
     def mark_missing(self, fact_id: str) -> None: ...
     def mark_conflict(self, fact_id: str, candidates: List[ConflictCandidate]) -> None: ...
     def mark_rejected(self, fact_id: str, reason: str) -> None: ...
-    def resolve_conflict(self, fact_id: str, resolution_value: Any,
-                         resolver_id: str) -> Fact:
-        """[Proposed — 语义 OPEN，D-STEP8-13] 记录人工裁决；
-        返回 Fact 的 status / revision / supersedes 转换未定义。"""
+    # resolve_conflict(fact_id, resolution_value, resolver_id) —— 第一版不提供
+    #   （D-STEP8-13 处置决议：最小路径不激活；裁决后 Fact 状态转换在冻结 CDM 中未定义，禁止发明）
 ```
 
-> 接口命名以冻结数据类为准：`Conflict` 的实例键是 `fact_id`（`src/cdm/types.py` 无 `conflict_id` 字段），因此统一使用 `fact_id` 作为裁决入口键。任何 `resolve()` / `resolve_conflict(conflict_id, ...)` 的旧写法均已废弃。
+> 接口命名以冻结数据类为准：`Conflict` 的实例键是 `fact_id`（`src/cdm/types.py` 无 `conflict_id` 字段）——若未来启用裁决入口，统一使用 `fact_id` 作为键；任何 `resolve()` / `resolve_conflict(conflict_id, ...)` 的旧写法均已废弃。
 
 ### Rule 层的职责
 
@@ -253,13 +251,13 @@ Evaluations + ConclusionRule → Conclusion（最小聚合）
 ## 5. First Vertical Slice（数据流）
 
 ```
-synthetic_business_fixture.xlsx（待 D-STEP8-02 设计完成）
+case_step8_defect_v1/inputs/inspection.xlsx（缺陷判定切片 fixture，已创建）
  ↓
 xlsx parser（openpyxl，确定性，不涉及语义）
  ↓
 RawSource + List[CellRaw]（每个 cell 有 sheet/row/col/raw_value/raw_text/position）
  ↓
-Mapper（确定性程度待 fixture 验证；见 §四 Q1-Q6）
+Mapper（确定性程度已验证 = 结果 A；D-STEP8-03 CLOSED，见 §2）
  ↓
 List[CandidateFact]（**瞬态桥接对象**，携带 fact_id/fact_type/value/unit/source_refs，但**不带合法 status**；不得伪装成 CDM Fact）
  ↓
@@ -271,13 +269,13 @@ Fact Store 闸门（review_status 人工确认 / missing 标记 / conflict 识�
  ↓
 Confirmed FactSet（status=filled, review_status=confirmed）
  ↓
-Compute（average / max / min — 待 fixture 确认；**分组键依赖 D-CONFLICT-001，当前 BLOCKED**）
+Compute（2026-10-09 决策更新：按替代切片方向由 Fixture Design 裁定最小 Compute set——当前路径无统计聚合；原混凝土方向 average / max / min 预候选 Deferred，分组依赖 D-CONFLICT-001 已解除）
  ↓
 Criterion Engine（operator 继承 CDM §25.1；review_status != confirmed → not_evaluable）
  ↓
 List[Evaluation]
  ↓
-ConclusionRule（最小聚合 — 待 fixture 确认逻辑）
+ConclusionRule（`step8_defect_slice_v1` — host_component_id 逐构件聚合 → 全局；D-STEP8-09 CLOSED）
  ↓
 Conclusion
  ↓
@@ -316,34 +314,45 @@ IR Materialization 是 Step 8 Adapter 必须承担的确定性投影工作——
 
 ## 6. First Fixture Contract
 
-### 当前状态：**OPEN**
+### 状态：**CLOSED**（2026-10-09 Fixture Design Sprint）
 
-workspace 中无真实 Excel 文件（Pre-Check 0a Glob 确认），无法使用真实 Excel。
+> **2026-10-09 决策更新（结论 B）**：fixture 方向由「混凝土抗压强度」调整为「缺陷判定切片」（决策报告 §4.2）；原混凝土方向内容随结论 B Deferred（不再承载实施）。D-STEP8-02 经 Fixture Design Sprint 证据化关闭。
 
-### 决策方向：**需要人工构造 business fixture**
+workspace 中无真实 Excel 文件（Pre-Check 0a Glob 确认）→ fixture 为**人工构造**，必须明确标记 `synthetic_business_fixture = true`，绝对不能伪装为 `historical_real_data`。
 
-必须明确标记为 `synthetic_business_fixture = true`，绝对不能伪装为 `historical_real_data`。
+### 已创建 fixture（三件交付物，唯一定稿）
 
-### fixture 设计需要完成的工作
+| 项 | 值 |
+|---|---|
+| case_id | `case_step8_defect_v1` |
+| 目录 | `tests/eval/fixtures/case_step8_defect_v1/` |
+| 交付物 | `inputs/inspection.xlsx` + `meta.json` + `notes.md`（仅此三项） |
+| Sheet / 规模 | 「构件缺陷检查记录」/ 1 header 行 + 6 数据行 × 6 列 |
+| 列 | 楼栋编号 \| 构件编号 \| 缺陷编号 \| 最大宽度(mm) \| 长度(m) \| 形态描述 |
+| 实例 key | B01 / K001-K003 / D001-D006（全局唯一；无连字符——冻结 tokenizer 兼容约束） |
+| 单位 | mm（宽度）/ m（长度），quantity_kind 均 = length |
+| 覆盖 | 结果行含 qualified（含 D002 = 0.30 边界等值）与 unqualified（D003 超限） |
+
+### fixture 设计交付物工作项（全部已执行）
 
 | # | 工作 | 产出 | 状态 |
 |---|---|---|---|
-| 1 | 选择 fixture 覆盖的 Scope | component + 混凝土抗压强度检测（候选规模：4 Component × 3 Sample = 12 条测量行；**候选，非既成事实**） | OPEN |
-| 2 | 设计 Excel 结构 | sheet 名称 / header 行 / 数据行 / 字段名 | OPEN |
-| 3 | 确定 fact_type 映射 | 每个列头对应 registry 中已注册的哪个 fact_type。**registry 实际仅注册 `component.id` / `component.concrete_strength` / `sample.id`；`sample.concrete_strength` 未注册（Proposed）** | OPEN |
-| 4 | 确定单位 | MPa（压力） | OPEN（预计为 MPa，但需确认 fixture 字段） |
-| 5 | 确定 scope_class | component（构件） | OPEN |
-| 6 | 设计实例 key 规则 | K001 / K002 / ... 或 B01-K001 / ... | OPEN |
-| 7 | fixture 周边文件 | `meta.json` + 映射说明（`notes.md`）。**ground_truth / expected_issues 属 Evaluation Case 设计（OOS-15），不是 Step 8 fixture 交付物** | OPEN |
-| 8 | 决定 fixture 用哪个 case_id | tests/eval/fixtures/<case_id>/inputs/inspection.xlsx | OPEN |
+| 1 | fixture 覆盖 Scope | defect 判定切片（building / component / defect 三层实例） | ✅ 已执行 |
+| 2 | Excel 结构 | 单 sheet / header 行 1 / 6 数据行 / 6 列 | ✅ 已执行 |
+| 3 | fact_type 映射 | 6/6 列头 → 全部已注册 fact_type（**零 Registry 变更**） | ✅ 已执行（Sprint Brief v2 §3） |
+| 4 | 单位 | mm（宽度）/ m（长度） | ✅ 已执行 |
+| 5 | scope_class | building / component / defect | ✅ 已执行 |
+| 6 | 实例 key 规则 | B01 / K001-K003 / D001-D006（无连字符） | ✅ 已执行 |
+| 7 | fixture 周边文件 | `meta.json` + `notes.md`（**无** ground_truth / expected_issues——OOS-15） | ✅ 已执行 |
+| 8 | case_id | `case_step8_defect_v1` | ✅ 已执行 |
 
-> **规模与证据边界**：12 行只是候选 Fixture 的数据规模，**不代表** sample→component 关联模型已合法。采用 12 行 **不关闭** D-STEP8-02；fixture 尚未创建，不得声称文件已存在。任何需要 Registry 扩展的类型（`sample.concrete_strength`）都必须标为 **Proposed**，且不得为关闭决策而编造业务证据。计算输出的 Fact ID / fact_type 若无法在不引入冲突的前提下确定，则 D-STEP8-06/07 保持 OPEN。
+> **权威来源**：完整规格 / Q1-Q6 回答 / 判定链 / 显示策略见 `Step_8_Fixture_Design_Sprint.md`（v2）与 fixture `notes.md`；本 Report 不再重复。验收证据：openpyxl 回读 7×6 与规格一致；`registry.has()` 6/6 True；OOS-15 边界（目录内无 ground_truth / expected_issues / known_issues）。
 
-### 不允许的做法
+### 不允许的做法（保留；本次关闭的合规性声明）
 
-- 为了"推进"强行把 D-STEP8-02 标记为 CLOSED（没有 fixture 就没有证据）
-- 使用完全虚构的字段（必须体现真实工程检测场景）
-- 伪装成 historical real data
+- 为了"推进"强行把 D-STEP8-02 标记为 CLOSED——**本次关闭的依据是实际创建并回读验证的文件**（非声称）
+- 使用完全虚构的字段——**本 fixture 使用受控词表与已注册 fact_type**，非脱离工程场景的杜撰
+- 伪装成 historical real data——**meta.json 显式 `synthetic_business_fixture=true`**
 
 ---
 
@@ -355,10 +364,10 @@ workspace 中无真实 Excel 文件（Pre-Check 0a Glob 确认），无法使用
 |---|---|---|---|---|
 | `src/parsers/base.py` | 无（Schema 定义） | CellRaw dataclass | `CellRaw(sheet, row, col, raw_value, raw_text, position)` | 100% |
 | `src/parsers/xlsx.py` | xlsx 文件路径 | ParseResult(RawSource, List[CellRaw]) | `parse_xlsx(path) → ParseResult` | 100% |
-| `src/facts/store.py` | List[CandidateFact] | FactStore（confirmed / missing / conflict / rejected） | **Proposed**：`ingest_candidates()`, `get_confirmed_facts()`, `get_all_facts()`, `get_conflicts()`, `mark_missing()`, `mark_conflict()`, `mark_rejected()`, `resolve_conflict(fact_id, resolution_value, resolver_id)` | 枚举 100%（CDM 继承）；裁决后转换语义 OPEN（D-STEP8-13） |
-| `src/facts/conflict.py` | Conflict 对象 | 人工决策结果 | **不新增独立 API**；`resolve_conflict` 由 `store.py` 统一暴露（Proposed），本模块仅可作内部辅助 | — |
+| `src/facts/store.py` | List[CandidateFact] | FactStore（confirmed / missing / conflict / rejected） | **Proposed**：`ingest_candidates()`, `get_confirmed_facts()`, `get_all_facts()`, `get_conflicts()`, `mark_missing()`, `mark_conflict()`, `mark_rejected()`；`resolve_conflict` **第一版不提供**（D-STEP8-13 处置） | 枚举 100%（CDM 继承）；裁决转换不激活（D-STEP8-13） |
+| `src/facts/conflict.py` | Conflict 记录辅助 | Conflict 记录（candidates + policy=manual） | **不新增独立 API**；仅作内部辅助（Conflict 记录构造/校验）；**不提供裁决入口**（D-STEP8-13 处置） | — |
 | `src/compute/unit_registry.py` | 无（Registry 定义） | Unit → quantity_kind 映射 | `get_quantity_kind(unit)` | 100%（deterministic） |
-| `src/compute/calculate.py` | List[Fact], statistic_type | computed Fact | **Proposed**：`compute_statistic(facts, statistic_type, result_fact_id, result_fact_type) → Fact` | 具体统计量与输出 fact_type OPEN（D-STEP8-07） |
+| `src/compute/calculate.py` | — | — | **第一版不创建**（D-STEP8-07 裁定：统计 Compute = ∅；避免空壳模块） | N/A |
 | `src/rules/criterion.py` | Fact, Criterion | Evaluation | `evaluate(fact, criterion) → Evaluation` | 100% |
 | `src/rules/conclude.py` | List[Evaluation], ConclusionRule | Conclusion | `conclude(evaluations, rule) → Conclusion` | 100% |
 | `src/ir/builder.py` | FactSet, DomainObjects, Conclusion | Report IR dict | `build(fact_set, domain_objects, conclusion) → dict` | 100% |
@@ -383,14 +392,14 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 
 | # | 编号 | 标准 | 验证方式 | 状态 |
 |---|---|---|---|---|
-| 1 | S8-S-01 | synthetic_business_fixture.xlsx 存在于 `tests/eval/fixtures/<case>/inputs/` | 文件存在 | 需 fixture 设计 |
-| 2 | S8-S-02 | 真实 Excel 可被 xlsx parser 读取，产出 RawSource + CellRaw list | 单元测试 | 依赖 fixture |
+| 1 | S8-S-01 | synthetic_business_fixture.xlsx 存在于 `tests/eval/fixtures/<case>/inputs/` | 文件存在 | ✅ 已满足（`case_step8_defect_v1`） |
+| 2 | S8-S-02 | 真实 Excel 可被 xlsx parser 读取，产出 RawSource + CellRaw list | 单元测试 | fixture 已就绪（Coding 验证） |
 | 3 | S8-S-03 | RawSource provenance 完整（source_id + location）；每个 CellRaw 精确对应 Excel 位置 | 单元测试 + 手动检查 JSON | 确定性（CDM 继承） |
-| 4 | S8-S-04 | Mapper 产出的 Candidate Fact：fact_id 三段式正确 + fact_type 不变式成立 + registry 验证通过 | 单元测试（需 fixture 后） | 依赖 fixture |
-| 5 | S8-S-05 | Fact Store 状态机正确：candidate→confirmed / missing / conflict 转换；Conflict resolution_policy = manual | 单元测试（状态转换矩阵） | CDM 继承 |
-| 6 | S8-S-06 | Compute 结果与独立 expected truth 一致（人工计算对比） | 集成测试 | 依赖 fixture |
+| 4 | S8-S-04 | Mapper 产出的 Candidate Fact：fact_id 三段式正确 + fact_type 不变式成立 + registry 验证通过 | 单元测试（需 fixture 后） | fixture 已就绪 + 映射规则冻结（Coding 验证） |
+| 5 | S8-S-05 | Fact Store 状态机正确：candidate→confirmed / missing / conflict 转换；Conflict resolution_policy = manual | 单元测试（状态转换矩阵） | CDM 继承（裁决后转换验证延后——D-STEP8-13 处置） |
+| 6 | S8-S-06 | 单位换算 / 量纲一致性 vs 独立 expected truth（**S8-S-06 重化**；统计计算延后——D-STEP8-07 裁定） | 集成测试 | 已重化（D-STEP8-07） |
 | 7 | S8-S-07 | Criterion Evaluation 正确（qualified / unqualified / not_evaluable 判定） | 单元测试 | CDM 继承 |
-| 8 | S8-S-08 | Conclusion 聚合逻辑正确 | 单元测试 | 依赖 fixture |
+| 8 | S8-S-08 | Conclusion 聚合逻辑正确 | 单元测试 | ConclusionRule 已裁定（`step8_defect_slice_v1`；Coding 验证） |
 | 9 | S8-S-09 | IR 合法且 deterministic（重复运行产出相同 IR；符合 04 Schema） | IR Schema 校验器 + 重复运行对比 | 100% 可验证 |
 | 10 | S8-S-10 | SystemOutput 可被 Step 7-E 真实消费（evaluate_case() 不抛出类型错误） | E2E 测试 | **关键门禁** |
 | 11 | S8-S-11 | Step 7-E 对真实 SystemOutput 跑 7 条 P0 规则，产出 CaseEvaluationResult | E2E 测试 | **关键门禁** |
@@ -424,12 +433,12 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 
 | # | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|---|
-| R1 | **真实 Excel fixture 不可得** | MEDIUM | D-STEP8-02 = OPEN；Fixture 设计需额外 Session | 允许人工构造 business fixture，但必须明确标记 synthetic |
-| R2 | **Mapper 无法完全确定性** | MEDIUM | Candidate A Zero-LLM 目标需调整；可能需要后续有限 LLM | 如实记录 Design Finding；结果 A/B/C 三种路径 |
-| R3 | **CDM Schema 边界空洞** | **HIGH**（已发生） | D-CONFLICT-001 = Coding-Blocking | 已登记 §10.1/§10.2；不静默修改 03；需独立设计决策 |
+| R1 | ~~真实 Excel fixture 不可得~~ | **CLOSED（已缓解）** | D-STEP8-02 CLOSED：synthetic fixture 已创建并回读验证 | 人工构造 business fixture 并明确标记 synthetic（已执行） |
+| R2 | ~~Mapper 无法完全确定性~~ | **CLOSED（已验证）** | 结果 A：全部确定性（D-STEP8-03 CLOSED） | 证据：Sprint Brief v2 §6 + notes.md §6；边界（合并单元格/多级表头）如实记录为后续工作 |
+| R3 | **CDM Schema 边界空洞** | **HIGH**（已发生） | D-CONFLICT-001 = OPEN / Deferred / 非当前路径（原 Coding-Blocking 已由合规最小替代切片解除；混凝土场景恢复时重新生效） | 已登记 §10.1/§10.2 + 2026-10-09 决策报告；不静默修改 03；需独立设计决策 |
 | R4 | **Report IR → SystemOutput 语义断层** | **LOW** | 已证伪——IR Materialization 可确定性承担 | Pre-Check 0b 确认 Adapter 可确定性投影 |
 | R5 | **Scope Creep（忍不住加 Pipeline/LLM）** | **HIGH** | 违反 OOS；延迟交付 | 严格对照 OOS 15 条；每写一个模块前确认 |
-| R6 | **Fixture 需要未注册的 fact_type** | **HIGH** | 需要 Proposed Registry 扩展 + 授权 | Registry 扩展属受控词表变更，需独立决策授权，**不得自行修改 registry.py**；若扩展仍不足以表达关系（如 sample→component）则升级为 Design Conflict |
+| R6 | ~~Fixture 需要未注册的 fact_type~~ | **CLOSED（已排除）** | 6/6 列头 fact_type 全部已注册（零 Registry 变更） | registry.has 6/6 True；Registry 扩展仍需独立授权，**不得自行修改 registry.py** |
 
 ---
 
@@ -437,7 +446,7 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 
 | ID | 发现 | 影响范围 | 状态 / 处理 |
 |---|---|---|---|
-| **D-CONFLICT-001** | `component.concrete_strength` 假设一个 Component 一个强度值；GB/T 50081-2019 要求每构件 3 个平行试块 → 需要 sample→component 归属关系 | Fixture 设计、Mapper、Compute、FactType 选择 | **OPEN（Coding-Blocking）**。现有 CDM 无法无歧义表达该关系（见 §10.2）。保留冲突；不得静默采用任何路径；不得修改 Registry/CDM 让问题看似消失 |
+| **D-CONFLICT-001** | `component.concrete_strength` 假设一个 Component 一个强度值；GB/T 50081-2019 要求每构件 3 个平行试块 → 需要 sample→component 归属关系 | Fixture 设计、Mapper、Compute、FactType 选择（混凝土场景） | **OPEN（Deferred / 非当前路径，未解决）**。现有 CDM 无法无歧义表达该关系（见 §10.2）。**2026-10-09 决策（结论 B）**：合规最小替代切片（缺陷判定切片）不依赖该关联，冲突不再对当前路径构成 Coding-Blocking；未宣告解决、关闭条件不变（决策报告 §5）。不得静默采用任何路径；不得修改 Registry/CDM 让问题看似消失 |
 
 ### 10.2 D-CONFLICT-001 证据化 Schema 可表达性分析
 
@@ -457,10 +466,11 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 2. 仅**扩展受控 Registry**（如 +`sample.concrete_strength`）：只能表达"试块有强度值"，**不能表达"该试块属于哪个构件"**，**不足以**关闭 D-CONFLICT-001。
 3. 必须**改变 Frozen CDM Schema**（新增 Sample Domain Object / 关系字段，或授权关系型 FactType）才能表达该归属；超出 Step 8 授权，需独立设计决策（`03` 变更 / D-045 级）。
 
-**结论**：
-- D-CONFLICT-001 保持 **OPEN**，登记为 **Coding-Blocking**；
-- 缺少的能力：一个合法的「sample → component」归属表达（L3 关系字段或经授权的关联类型），以及 Compute 分组键的确定性解析依据；
-- 关闭条件：由独立决策批准 `03` 层面的关联表达，或在既有模型内给出**无需该关联**的合规最小替代方案并经证据验证。
+**结论**（2026-10-09 复核后更新状态，实质结论不变）：
+- D-CONFLICT-001 保持 **OPEN**；经设计决策裁定为 **Deferred / 非当前路径**（不再对本 Step 的当前路径构成 Coding-Blocking）；
+- 缺少的能力：一个合法的「sample → component」归属表达（L3 关系字段或经授权的关联类型），以及 Compute 分组键的确定性解析依据——**该能力缺口未消除**；
+- 关闭条件（不变）：由独立决策批准 `03` 层面的关联表达，或在既有模型内给出**无需该关联**的合规最小替代方案并经证据验证；
+- **2026-10-09 复核**：合规最小替代方案已被找到并经字段级链路验证（缺陷判定切片，归属由 `Defect.host_component_id` 冻结字段承载）——见 `Step_8_Sample_Component_Relation_Design_Decision.md` §3/§4。该方案**不宣告原冲突解决**：原混凝土场景（sample→component 归属 + 统计聚合）仍无法在冻结 CDM 内表达，保持 Deferred。
 
 > **禁止**：不得通过修改 `src/cdm/registry.py` 或 `03_CANONICAL_DATA_MODEL.md` 使该冲突看似消失；不得伪造 `revision` / `supersedes`；不得把 Conflict 裁决与 Fact 更正混为一谈。
 
@@ -498,7 +508,7 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 
 参见配套文档：`docs/Step_8_Coding_Contract_v1.md`
 
-状态标记：**PROPOSED**（决策不全，且存在 Coding-Blocking Design Conflict `D-CONFLICT-001`；待关闭全部 OPEN 决策与设计冲突后重新检查 READY FOR CODING 门禁）
+状态标记：**READY FOR CODING**（9/9 门禁 PASS，见 §14；`D-CONFLICT-001` 保持 OPEN / Deferred / 非当前路径；`D-STEP8-13` 处置决议＝最小路径不激活——均不构成当前路径 Coding-Blocking）
 
 ---
 
@@ -508,62 +518,56 @@ ir/validate             — 后续 Step（Step 8 IR Builder 必须直接产出�
 
 ```text
 INHERITED:       2  (D-STEP8-08, D-STEP8-10)
-CLOSED:          5  (D-STEP8-01, D-STEP8-04, D-STEP8-05, D-STEP8-11, D-STEP8-12)
-CLOSED + OPEN:   1  (D-STEP8-03：结构 CLOSED / 确定性程度 OPEN)
-OPEN:            5  (D-STEP8-02, D-STEP8-06, D-STEP8-07, D-STEP8-09, D-STEP8-13)
-Design Conflict: 1  (D-CONFLICT-001, Coding-Blocking)
+CLOSED:         10  (D-STEP8-01, 02, 03, 04, 05, 06, 07, 09, 11, 12)
+OPEN:            1  (D-STEP8-13：处置决议＝最小路径不激活，保持 OPEN、非 Coding-Blocking)
+Design Conflict: 1  (D-CONFLICT-001：OPEN / Deferred / 非当前路径（未解决）；当前路径无 Coding-Blocking Conflict)
 ```
 
 ### READY FOR CODING 门禁检查
 
 | # | 门禁 | 状态 | 详情 |
 |---|---|---|---|
-| 1 | 第一份 Fixture 的设计和来源性质已明确 | **FAIL** | D-STEP8-02 OPEN（无真实 Excel；synthetic fixture 设计未完成，文件未创建） |
-| 2 | Mapper 确定性边界有证据支持 | **FAIL** | D-STEP8-03 确定性程度 OPEN（Q1-Q6 待 fixture） |
-| 3 | 第一版 FactType 与 Registry 要求已明确 | **FAIL** | D-STEP8-06 OPEN（`sample.concrete_strength` 未注册；计算输出类型未定） |
-| 4 | Sample→Component 关联已合法确定，或有合规最小替代 | **FAIL** | D-CONFLICT-001 OPEN（见 §10.2） |
-| 5 | Compute 输入 / 分组 / 输出 / 缺失冲突语义已明确 | **FAIL** | D-STEP8-07 OPEN（分组键依赖 D-CONFLICT-001） |
-| 6 | Criterion / ConclusionRule 与输出枚举已明确 | **FAIL** | D-STEP8-09 OPEN |
+| 1 | 第一份 Fixture 的设计和来源性质已明确 | **PASS** | D-STEP8-02 CLOSED：synthetic_business_fixture `case_step8_defect_v1` 已创建（xlsx + meta.json + notes.md；回读验证 7×6；Sprint Brief v2 §8 8/8） |
+| 2 | Mapper 确定性边界有证据支持 | **PASS** | D-STEP8-03 CLOSED：Q1-Q6 = 结果 A（全部确定性；Sprint Brief v2 §6 / notes.md §6） |
+| 3 | 第一版 FactType 与 Registry 要求已明确 | **PASS** | D-STEP8-06 CLOSED：6/6 fact_type 已注册、零 Registry 变更（registry.has 6/6 True） |
+| 4 | Sample→Component 关联已合法确定，或有合规最小替代 | **PASS（替代路径）** | 合规最小替代切片（缺陷判定切片）不依赖该关联，经字段级链路验证（决策报告 §3/§4）；D-CONFLICT-001 本身保持 OPEN / Deferred，未宣告解决 |
+| 5 | Compute 输入 / 分组 / 输出 / 缺失冲突语义已明确 | **PASS** | D-STEP8-07 CLOSED：第一版统计 Compute = ∅；仅 unit_registry（Sprint Brief v2 §5）；缺失/冲突语义 = N/A |
+| 6 | Criterion / ConclusionRule 与输出枚举已明确 | **PASS** | D-STEP8-09 CLOSED：criterion-step8-defect-width-01 + step8_defect_slice_v1 + direction 值域声明（Sprint Brief v2 §4） |
 | 7 | SystemOutput projection 可按冻结 Schema 无歧义实现 | **PASS** | D-STEP8-11 CLOSED；Pre-Check 0b 字段级确认 |
-| 8 | 不存在未解决的 Coding-Blocking Design Conflict | **FAIL** | D-CONFLICT-001 OPEN（Coding-Blocking） |
-| 9 | 三份文档的决策矩阵 / 接口 / 流程 / 风险 / 状态一致 | **PASS** | 本次 Cross-Document Consistency Repair 后一致 |
+| 8 | 不存在未解决的 Coding-Blocking Design Conflict | **PASS（当前路径）** | 当前路径（缺陷判定切片）无 Coding-Blocking Design Conflict；D-CONFLICT-001 保持 OPEN / Deferred / 非当前路径（未解决，恢复混凝土场景时重新生效） |
+| 9 | 三份文档的决策矩阵 / 接口 / 流程 / 风险 / 状态一致 | **PASS** | Fixture Design Sprint 三文档同批更新后一致（Closure §2/§14 ↔ Contract §0/§19 ↔ Sprint Brief v2） |
 
-### OPEN 决策清单
+### OPEN 决策清单（保留项，均不构成当前路径 Coding-Blocking）
 
 | OPEN | 关键程度 | 关闭条件 |
 |---|---|---|
-| D-STEP8-02 Fixture Source | **CRITICAL** | 设计并创建 synthetic_business_fixture（8 个子工作项）；文件创建前不得声称存在 |
-| D-STEP8-03 Mapper 确定性 | **CRITICAL** | fixture 完成后回答 Q1-Q6 |
-| D-STEP8-06 First Fact Types | **HIGH** | 依赖 D-STEP8-02 + registry 覆盖（含计算输出类型） |
-| D-STEP8-07 First Compute set | **HIGH** | 依赖 D-CONFLICT-001 的分组能力 |
-| D-STEP8-09 First ConclusionRule | **HIGH** | 依赖 fixture 业务逻辑 |
-| D-STEP8-13 Conflict 裁决 → Fact 转换 | **HIGH** | 冻结 CDM 明确冲突裁决后的 Fact 状态转换，或授权新决策 |
-| **D-CONFLICT-001** Component–Sample 关联 | **CRITICAL（Coding-Blocking）** | 独立决策批准 `03` 层面的关联表达，或给出无需该关联的合规最小替代方案 |
+| D-STEP8-13 Conflict 裁决 → Fact 转换 | **OPEN（非 Coding-Blocking）** | 处置决议（Sprint Brief v2 §7）：第一版不提供 `resolve_conflict`；`mark_conflict` 仅记录；不伪造 conflict→superseded 转换。关闭条件不变：冻结 CDM 明确裁决后转换，或授权新决策 |
+| **D-CONFLICT-001** Component–Sample 关联 | **OPEN / Deferred / 非当前路径**（不再是当前路径的 Coding-Blocking） | 独立决策批准 `03` 层面的关联表达，或给出无需该关联的合规最小替代方案（当前路径已由替代切片解除阻塞，**未宣告解决**；混凝土场景恢复时重新生效） |
 
 ### 最终状态判定
 
 ```text
 STEP 8 DESIGN DISCOVERY = COMPLETE
-STEP 8 DESIGN DECISION CLOSURE = INCOMPLETE（关键决策 OPEN + 1 个 Coding-Blocking Design Conflict）
-STEP 8 DESIGN STATUS = NEEDS DECISION
-STEP 8 CODING CONTRACT = PROPOSED
-STEP 8 FIXTURE DESIGN = NOT STARTED（被 D-CONFLICT-001 阻塞）
-STEP 8 CODING = BLOCKED
+STEP 8 DESIGN DECISION CLOSURE = COMPLETE（D-STEP8-02/03/06/07/09 证据化 CLOSED；D-STEP8-13 处置登记；9/9 门禁 PASS）
+STEP 8 DESIGN STATUS = READY FOR CODING
+STEP 8 CODING CONTRACT = READY FOR CODING
+STEP 8 FIXTURE DESIGN = COMPLETE（case_step8_defect_v1 三件交付物已创建并验证）
+STEP 8 CODING = READY（可启动 Coding Round；尚未开始）
 ```
 
 ### 下一阶段
 
 ```text
-Step 8 Fixture Design Round（新 Session）
-  ↓ 先关闭 D-CONFLICT-001（sample→component 关联表达）与 D-STEP8-13（Conflict 裁决后转换）
-  ↓ 关闭 D-STEP8-02 + D-STEP8-06 + D-STEP8-07 + D-STEP8-09
-  ↓ 回答 D-STEP8-03 的 Q1-Q6
-  ↓ 重新跑本 Report 的 READY FOR CODING 门禁（9 条）
-  ↓ 如全部通过 → Step 8 Coding Round
+Step 8 Coding Round（新 Session）
+  ↓ 按 Contract v1（READY FOR CODING）实施 src/parsers | facts | compute(unit_registry) | rules | ir
+  ↓ fixture = tests/eval/fixtures/case_step8_defect_v1（已就绪；映射规则 / 判定链 / 显示策略冻结于 Sprint Brief v2 与 notes.md）
+  ↓ D-CONFLICT-001 保持 OPEN / Deferred（非前置；恢复混凝土场景时重新生效）
+  ↓ D-STEP8-13 保持 OPEN（最小路径不激活 Conflict 分支）
+  ↓ S8-S-01 ~ S8-S-12 验证 + Step 7-E/F 回归（S8-S-12）
 ```
 
-> 未满足门禁时不得虚假升级状态：三份文档必须一致输出 `NEEDS DECISION` / `PROPOSED` / `BLOCKED`。
+> 门禁已全部满足（9/9 PASS）；三份文档一致输出 `READY FOR CODING`。状态升级以实际门禁检查为依据；不得虚假升级。
 
 ---
 
-*本 Session 到此停止。不创建任何生产代码。等待下一个 Session 关闭 OPEN 决策后进入 Coding。*
+*本 Report 到此完成决策关闭与 Fixture Design。不创建任何生产代码。下一步：Step 8 Coding Round（Contract = READY FOR CODING）。*
